@@ -1,0 +1,15 @@
+# Backend
+bar_backend/__pycache__/
+bar_backend/venv/
+bar_backend/.env
+bar_backend/correo.env
+
+# Frontend
+frond/node_modules/
+frond/dist/
+frond/.env.*
+
+# Sistema
+.DS_Store
+Thumbs.db
+*.log
