@@ -10,7 +10,6 @@ import Jefe_productos from '@/components/jefe_productos.vue';
 import Administradores from '@/components/administradores.vue';
 import Historial from '@/components/historial.vue';
 import Administrador_parte from '@/components/administrador_parte.vue';
-import Tareas_admin from '@/components/tareas_admin.vue';
 import Factura_admin from '@/components/factura_admin.vue';
 import Facturas from '@/components/facturas.vue';
 import Datos_jefe from '@/components/datos_jefe.vue';
@@ -18,6 +17,7 @@ import Recuperar_contra from '@/components/recuperar_contra.vue';
 import Agregar_admin from '@/components/agregar_admin.vue';
 import Login_principal from '@/components/admin panel/login_principal.vue';
 import Home_admin_principal from '@/components/admin panel/home_admin_principal.vue';
+import Tareas_admin from '@/components/Tareas_admin.vue';
 
 const routes = [
   { path: '/login', name: 'Login', component: LoginView },
