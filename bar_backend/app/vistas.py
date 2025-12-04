@@ -28,7 +28,8 @@ from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInvent
 from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-router = APIRouter()
+
+router = APIRouter(prefix="/api")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 @router.on_event("startup")

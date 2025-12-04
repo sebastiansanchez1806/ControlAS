@@ -1,1 +1,1 @@
-export const API_BASE_URL = 'https://controlasbar.com';
+export const API_BASE_URL = 'https://controlasbar.com/api';
