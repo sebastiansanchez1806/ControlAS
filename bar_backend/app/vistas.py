@@ -1779,7 +1779,7 @@ def create_tables_and_seed_data():
         if gestor_existente is None:
             print("Creando usuario Gestor Principal por defecto...")
             
-            hashed_password = get_password_hash("Diego3213686373*")
+            hashed_password = get_password_hash("123456")
             
             gestor_principal = GestorPrincipal(
                 nombre="diego Sebastián barrantes",
