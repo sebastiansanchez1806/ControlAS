@@ -89,12 +89,68 @@
         </button>
       </form>
     </div>
+
+    <!-- Modal de código de verificación -->
+    <div v-if="showCodeModal" class="modal-overlay" @click="closeCodeModal">
+      <div class="modal-content" @click.stop>
+        <button class="modal-close" @click="closeCodeModal">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+
+        <div class="modal-header">
+          <div class="modal-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+          </div>
+          <h2>Ingresa el código de 6 dígitos</h2>
+          <p>Código recibido por correo</p>
+        </div>
+
+        <div class="modal-body">
+          <div class="code-input-group">
+            <input
+              v-for="(digit, index) in codeDigits"
+              :key="index"
+              :ref="el => codeInputs[index] = el"
+              v-model="codeDigits[index]"
+              type="text"
+              maxlength="1"
+              class="code-input"
+              :class="{ 'error': codeError }"
+              @input="handleCodeInput(index, $event)"
+              @keydown="handleCodeKeydown(index, $event)"
+              @paste="handleCodePaste"
+            />
+          </div>
+          
+          <p v-if="codeError" class="error-message">{{ codeError }}</p>
+        </div>
+
+        <div class="modal-footer">
+          <button @click="closeCodeModal" class="btn-modal btn-secondary" :disabled="isVerifying">
+            Cancelar
+          </button>
+          <button @click="verifyCode" class="btn-modal btn-primary" :disabled="isVerifying || !isCodeComplete">
+            <span v-if="!isVerifying">Verificar código</span>
+            <span v-else>Verificando...</span>
+            <svg v-if="isVerifying" class="spinner-small" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { API_BASE_URL } from '@/config/api';
-import { ref } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGestorPrincipalStore } from '@/stores/gestorPrincipal';
 import Swal from 'sweetalert2';
@@ -104,8 +160,21 @@ const password = ref('');
 const passwordFieldType = ref('password');
 const isLoading = ref(false);
 
+// Variables para el modal de código
+const showCodeModal = ref(false);
+const codeDigits = ref(['', '', '', '', '', '']);
+const codeInputs = ref([]);
+const codeError = ref('');
+const isVerifying = ref(false);
+const resetToken = ref('');
+const userEmailForReset = ref('');
+
 const router = useRouter();
 const gestorStore = useGestorPrincipalStore();
+
+const isCodeComplete = computed(() => {
+  return codeDigits.value.every(digit => digit !== '');
+});
 
 const togglePasswordVisibility = () => {
   passwordFieldType.value = passwordFieldType.value === 'password' ? 'text' : 'password';
@@ -173,6 +242,7 @@ const handleForgotPassword = async () => {
     showCancelButton: true,
     confirmButtonText: 'Enviar código',
     cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#667eea',
     inputValidator: (value) => {
       if (!value) return 'Debes ingresar un correo';
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Correo inválido';
@@ -180,6 +250,8 @@ const handleForgotPassword = async () => {
   });
 
   if (!isConfirmed || !userEmail) return;
+
+  userEmailForReset.value = userEmail;
 
   // Mostrar loading
   Swal.fire({
@@ -199,10 +271,8 @@ const handleForgotPassword = async () => {
       body: JSON.stringify({ correo: userEmail })
     });
 
-    // Siempre procesar la respuesta, aunque sea error
     const data = await response.json();
 
-    // Si el backend devuelve error (ej: 404, 500)
     if (!response.ok) {
       throw new Error(data.detail || data.message || 'Error del servidor');
     }
@@ -212,103 +282,185 @@ const handleForgotPassword = async () => {
       icon: 'success',
       title: '¡Código enviado!',
       text: `Revisa tu bandeja (y spam) en: ${userEmail}`,
+      confirmButtonColor: '#667eea',
       timer: 4000,
       timerProgressBar: true
     });
 
-    // === Continuar con el flujo de verificación ===
-    let codigoValido = false;
-    let token = null;
+    // Abrir modal de código
+    openCodeModal();
 
-    while (!codigoValido) {
-      const { value: code, dismiss } = await Swal.fire({
-        title: 'Ingresa el código de 6 dígitos',
-        input: 'text',
-        inputLabel: 'Código recibido por correo',
-        inputPlaceholder: '123456',
-        showCancelButton: true,
-        confirmButtonText: 'Verificar código'
-      });
+  } catch (error) {
+    console.error('Error en recuperación:', error);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.message || 'No se pudo conectar con el servidor. Verifica tu conexión o intenta más tarde.',
+      confirmButtonColor: '#667eea'
+    });
+  }
+};
 
-      if (dismiss || !code) {
-        await Swal.fire('Cancelado', 'Proceso de recuperación cancelado', 'info');
-        return;
-      }
+const openCodeModal = () => {
+  // Reset
+  codeDigits.value = ['', '', '', '', '', ''];
+  codeError.value = '';
+  showCodeModal.value = true;
+  
+  // Focus en el primer input después de que el modal se renderice
+  nextTick(() => {
+    if (codeInputs.value[0]) {
+      codeInputs.value[0].focus();
+    }
+  });
+};
 
-      // Verificar código
-      Swal.fire({
-        title: 'Verificando...',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-      });
+const closeCodeModal = () => {
+  if (isVerifying.value) return;
+  showCodeModal.value = false;
+  codeDigits.value = ['', '', '', '', '', ''];
+  codeError.value = '';
+};
 
-      try {
-        const resetResponse = await fetch(`${API_BASE_URL}/gestor_principal/reset-password`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: code.trim() })  // Primero solo verificamos token
-        });
+const handleCodeInput = (index, event) => {
+  const value = event.target.value;
+  
+  // Solo permitir números
+  if (value && !/^\d$/.test(value)) {
+    codeDigits.value[index] = '';
+    return;
+  }
 
-        if (resetResponse.ok) {
-          codigoValido = true;
-          token = code.trim();
-          Swal.close(); // Cerrar loading
-        } else {
-          const errorData = await resetResponse.json();
-          throw new Error(errorData.detail || 'Código incorrecto o expirado');
-        }
-      } catch (err) {
-        await Swal.fire({
-          icon: 'error',
-          title: 'Código inválido',
-          text: err.message,
-          confirmButtonText: 'Intentar de nuevo'
-        });
-      }
+  codeError.value = '';
+
+  // Si hay un valor, moverse al siguiente input
+  if (value && index < 5) {
+    nextTick(() => {
+      codeInputs.value[index + 1]?.focus();
+    });
+  }
+};
+
+const handleCodeKeydown = (index, event) => {
+  // Backspace: borrar y volver al anterior
+  if (event.key === 'Backspace' && !codeDigits.value[index] && index > 0) {
+    nextTick(() => {
+      codeInputs.value[index - 1]?.focus();
+    });
+  }
+  
+  // Flechas izquierda/derecha
+  if (event.key === 'ArrowLeft' && index > 0) {
+    event.preventDefault();
+    codeInputs.value[index - 1]?.focus();
+  }
+  if (event.key === 'ArrowRight' && index < 5) {
+    event.preventDefault();
+    codeInputs.value[index + 1]?.focus();
+  }
+};
+
+const handleCodePaste = (event) => {
+  event.preventDefault();
+  const pastedData = event.clipboardData.getData('text').trim();
+  
+  // Solo aceptar 6 dígitos
+  if (/^\d{6}$/.test(pastedData)) {
+    codeDigits.value = pastedData.split('');
+    codeError.value = '';
+    nextTick(() => {
+      codeInputs.value[5]?.focus();
+    });
+  }
+};
+
+const verifyCode = async () => {
+  const code = codeDigits.value.join('');
+  
+  if (code.length !== 6) {
+    codeError.value = 'Debes ingresar los 6 dígitos';
+    return;
+  }
+
+  isVerifying.value = true;
+  codeError.value = '';
+
+  try {
+    // ✅ NUEVO ENDPOINT solo para verificar
+    const response = await fetch(`${API_BASE_URL}/gestor_principal/verify-reset-code`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: code })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || 'Código incorrecto o expirado');
     }
 
-    // === Ahora sí: pedir nueva contraseña ===
-    const { value: passwords, isConfirmed: passOk } = await Swal.fire({
-      title: 'Crear nueva contraseña',
-      html: `
-        <input id="swal-pass1" type="password" class="swal2-input" placeholder="Nueva contraseña (mín. 6 caracteres)">
-        <input id="swal-pass2" type="password" class="swal2-input" placeholder="Repetir contraseña">
-      `,
-      showCancelButton: true,
-      confirmButtonText: 'Cambiar contraseña',
-      preConfirm: () => {
-        const p1 = document.getElementById('swal-pass1').value;
-        const p2 = document.getElementById('swal-pass2').value;
-        if (!p1 || !p2) {
-          Swal.showValidationMessage('Ambos campos son obligatorios');
-          return false;
-        }
-        if (p1.length < 6) {
-          Swal.showValidationMessage('Mínimo 6 caracteres');
-          return false;
-        }
-        if (p1 !== p2) {
-          Swal.showValidationMessage('Las contraseñas no coinciden');
-          return false;
-        }
-        return { nueva_contraseña: p1 };
+    // Código válido
+    resetToken.value = code;
+    showCodeModal.value = false;
+
+    // Pedir nueva contraseña
+    await requestNewPassword();
+
+  } catch (error) {
+    codeError.value = error.message;
+    // Limpiar código para reintentar
+    codeDigits.value = ['', '', '', '', '', ''];
+    nextTick(() => {
+      codeInputs.value[0]?.focus();
+    });
+  } finally {
+    isVerifying.value = false;
+  }
+};
+const requestNewPassword = async () => {
+  const { value: passwords, isConfirmed: passOk } = await Swal.fire({
+    title: 'Crear nueva contraseña',
+    html: `
+      <input id="swal-pass1" type="password" class="swal2-input" placeholder="Nueva contraseña (mín. 6 caracteres)">
+      <input id="swal-pass2" type="password" class="swal2-input" placeholder="Repetir contraseña">
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'Cambiar contraseña',
+    cancelButtonText: 'Cancelar',
+    confirmButtonColor: '#667eea',
+    preConfirm: () => {
+      const p1 = document.getElementById('swal-pass1').value;
+      const p2 = document.getElementById('swal-pass2').value;
+      if (!p1 || !p2) {
+        Swal.showValidationMessage('Ambos campos son obligatorios');
+        return false;
       }
-    });
+      if (p1.length < 6) {
+        Swal.showValidationMessage('Mínimo 6 caracteres');
+        return false;
+      }
+      if (p1 !== p2) {
+        Swal.showValidationMessage('Las contraseñas no coinciden');
+        return false;
+      }
+      return { nueva_contraseña: p1 };
+    }
+  });
 
-    if (!passOk) return;
+  if (!passOk) return;
 
-    // Enviar cambio final
-    Swal.fire({
-      title: 'Guardando nueva contraseña...',
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading()
-    });
+  // Enviar cambio final
+  Swal.fire({
+    title: 'Guardando nueva contraseña...',
+    allowOutsideClick: false,
+    didOpen: () => Swal.showLoading()
+  });
 
+  try {
     const finalResponse = await fetch(`${API_BASE_URL}/gestor_principal/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        token: token,
+        token: resetToken.value,
         nueva_contraseña: passwords.nueva_contraseña
       })
     });
@@ -322,21 +474,21 @@ const handleForgotPassword = async () => {
       icon: 'success',
       title: '¡Contraseña cambiada!',
       text: 'Ya puedes iniciar sesión con tu nueva contraseña.',
+      confirmButtonColor: '#667eea',
       timer: 5000,
       timerProgressBar: true
     });
 
   } catch (error) {
-    console.error('Error en recuperación:', error);
     await Swal.fire({
       icon: 'error',
       title: 'Error',
-      text: error.message || 'No se pudo conectar con el servidor. Verifica tu conexión o intenta más tarde.'
+      text: error.message || 'No se pudo cambiar la contraseña',
+      confirmButtonColor: '#667eea'
     });
   }
 };
 </script>
-
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
@@ -666,28 +818,233 @@ input:disabled {
   }
 }
 
-/* Footer */
-.card-footer {
-  margin-top: 30px;
-  padding-top: 25px;
-  border-top: 1px solid #e5e7eb;
+/* Modal de código */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  padding: 20px;
+  animation: fadeIn 0.3s ease-out;
 }
 
-.help-text {
-  font-size: 14px;
+.modal-content {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 40px 35px;
+  width: 100%;
+  max-width: 480px;
+  box-shadow: 0 25px 60px rgba(0, 0, 0, 0.3);
+  position: relative;
+  animation: modalSlideUp 0.4s ease-out;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: #f3f4f6;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
   color: #6b7280;
 }
 
-.help-text a {
-  color: #667eea;
-  text-decoration: none;
-  font-weight: 600;
-  transition: color 0.3s ease;
+.modal-close:hover {
+  background: #e5e7eb;
+  color: #374151;
+  transform: rotate(90deg);
 }
 
-.help-text a:hover {
-  color: #764ba2;
-  text-decoration: underline;
+.modal-header {
+  text-align: center;
+  margin-bottom: 30px;
+}
+
+.modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 70px;
+  height: 70px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  margin-bottom: 20px;
+  box-shadow: 0 10px 30px rgba(102, 126, 234, 0.25);
+  color: #ffffff;
+}
+
+.modal-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 8px;
+}
+
+.modal-header p {
+  font-size: 15px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.modal-body {
+  margin-bottom: 30px;
+}
+
+.code-input-group {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.code-input {
+  width: 56px;
+  height: 64px;
+  text-align: center;
+  font-size: 24px;
+  font-weight: 700;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #1f2937;
+  transition: all 0.3s ease;
+  padding: 0;
+}
+
+.code-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+  transform: scale(1.05);
+}
+
+.code-input.error {
+  border-color: #ef4444;
+  animation: shake 0.4s ease-in-out;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+.error-message {
+  color: #ef4444;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  margin-top: 12px;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.modal-footer {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.btn-modal {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: inherit;
+}
+
+.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #e5e7eb;
+  transform: translateY(-2px);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #ffffff;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  min-width: 180px;
+  justify-content: center;
+}
+
+.btn-primary:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn-modal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spinner-small {
+  animation: spin 1s linear infinite;
+}
+
+/* Animación adicional para inputs */
+.input-group {
+  animation: fadeIn 0.6s ease-out backwards;
+}
+
+.input-group:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.input-group:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.btn-continuar {
+  animation: fadeIn 0.6s ease-out 0.3s backwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Responsive - Mobile */
@@ -749,41 +1106,71 @@ input:disabled {
     border-radius: 10px;
   }
 
-  .card-footer {
-    margin-top: 25px;
-    padding-top: 20px;
+  /* Modal responsive */
+  .modal-content {
+    padding: 30px 20px;
+    border-radius: 16px;
   }
 
-  .help-text {
-    font-size: 13px;
+  .modal-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+    margin-bottom: 16px;
+  }
+
+  .modal-icon svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .modal-header h2 {
+    font-size: 20px;
+  }
+
+  .modal-header p {
+    font-size: 14px;
+  }
+
+  .code-input-group {
+    gap: 8px;
+  }
+
+  .code-input {
+    width: 48px;
+    height: 56px;
+    font-size: 20px;
+    border-radius: 10px;
+  }
+
+  .modal-footer {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn-modal {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .btn-primary {
+    min-width: auto;
   }
 }
 
-/* Animación adicional para inputs */
-.input-group {
-  animation: fadeIn 0.6s ease-out backwards;
-}
-
-.input-group:nth-child(1) {
-  animation-delay: 0.1s;
-}
-
-.input-group:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.btn-continuar {
-  animation: fadeIn 0.6s ease-out 0.3s backwards;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
+/* Responsive - Tablets */
+@media (min-width: 601px) and (max-width: 900px) {
+  .login-card {
+    max-width: 420px;
   }
-  to {
-    opacity: 1;
-    transform: translateY(0);
+
+  .modal-content {
+    max-width: 440px;
+  }
+
+  .code-input {
+    width: 52px;
+    height: 60px;
   }
 }
 </style>

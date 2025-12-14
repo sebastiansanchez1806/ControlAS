@@ -1142,3 +1142,6 @@ class DuenoUpdate(BaseModel):
     cantidad_bares: Optional[int] = None 
     estado: Optional[str] = None
     imagen: Optional[str] = None
+
+class VerifyCodeRequest(BaseModel):
+    token: str

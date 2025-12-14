@@ -2367,3 +2367,27 @@ def gestor_reset_password(request: schemas.ResetPasswordRequest, db: Session = D
     db.commit()
 
     return {"message": "¡Contraseña actualizada exitosamente!"}
+
+
+# Después del endpoint forgot-password
+@router.post("/gestor_principal/verify-reset-code")
+def gestor_verify_reset_code(request: schemas.VerifyCodeRequest, db: Session = Depends(get_db)):
+    """
+    Verifica si el código de recuperación es válido (sin cambiar contraseña)
+    """
+    from datetime import datetime
+
+    db_token = db.query(modelos.PasswordResetToken).filter(
+        modelos.PasswordResetToken.token == request.token,
+        modelos.PasswordResetToken.dueno_id.is_(None)
+    ).first()
+
+    if not db_token:
+        raise HTTPException(status_code=400, detail="Código inválido o ya utilizado.")
+
+    if db_token.expires_at < datetime.now():
+        db.delete(db_token)
+        db.commit()
+        raise HTTPException(status_code=400, detail="El código ha expirado.")
+
+    return {"message": "Código válido", "token": request.token}
