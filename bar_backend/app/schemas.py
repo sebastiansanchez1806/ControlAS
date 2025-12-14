@@ -1120,13 +1120,13 @@ def get_password_hash(password: str) -> Any:
 # --- Esquemas de Login ---
 
 class GestorPrincipalLoginRequest(BaseModel):
-    """Esquema para la petición de login de un Gestor Principal (usa correo y contraseña)."""
+
     correo: str
     contraseña: str
 
 # El esquema de respuesta solo contiene los campos de la tabla.
 class GestorPrincipalLoginResponse(BaseModel):
-    """Esquema para la respuesta de login exitoso de un Gestor Principal."""
+
     id: int
     nombre: str
     correo: str

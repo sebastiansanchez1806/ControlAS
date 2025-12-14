@@ -2259,3 +2259,111 @@ def backup_y_limpiar_facturas_inventario_mensual():
         traceback.print_exc()
     finally:
         db.close()
+
+
+
+@router.post("/gestor_principal/forgot-password")
+def gestor_forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Envía código de recuperación al correo del Gestor Principal
+    """
+    gestor = db.query(modelos.GestorPrincipal).filter(modelos.GestorPrincipal.correo == request.correo).first()
+    if not gestor:
+        return {"message": "Si el correo está registrado, recibirás un código para restablecer tu contraseña."}
+
+    # Generar código de 6 dígitos
+    import secrets
+    from datetime import datetime, timedelta
+
+    reset_code = f"{secrets.randbelow(1000000):06d}"
+    expires_at = datetime.now() + timedelta(minutes=15)
+
+    # Eliminar tokens anteriores del gestor (usamos dueno_id NULL para identificarlo)
+    db.query(modelos.PasswordResetToken).filter(modelos.PasswordResetToken.dueno_id.is_(None)).delete()
+    db.commit()
+
+    # Guardar nuevo token (reutilizamos la tabla, pero con dueno_id NULL)
+    new_token = modelos.PasswordResetToken(
+        token=reset_code,
+        dueno_id=None,  # Esto lo diferencia de los tokens de dueños
+        expires_at=expires_at
+    )
+    db.add(new_token)
+    db.commit()
+
+    # Correo bonito
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: sans-serif; background: #f0f2f5; padding: 20px; }}
+            .container {{ max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); text-align: center; }}
+            .header {{ background: #667eea; color: white; padding: 20px; border-radius: 10px 10px 0 0; margin: -30px -30px 30px -30px; }}
+            .code {{ font-size: 36px; font-weight: bold; color: #667eea; letter-spacing: 8px; margin: 30px 0; background: #f0f0ff; padding: 15px; border-radius: 10px; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>Control AS - Panel Administrador</h1>
+            </div>
+            <h2>¡Hola {gestor.nombre}!</h2>
+            <p>Solicitaste recuperar tu contraseña.</p>
+            <p>Tu código de verificación es:</p>
+            <div class="code">{reset_code}</div>
+            <p>Este código expira en 15 minutos.</p>
+            <p>Si no solicitaste esto, ignora este mensaje.</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    try:
+        send_email(
+            to_email=gestor.correo,
+            subject="🔑 Recuperación de contraseña - Control AS",
+            html_content=html_content
+        )
+    except Exception as e:
+        print(f"Error enviando correo: {e}")
+
+    return {"message": "Si el correo está registrado, recibirás un código para restablecer tu contraseña."}
+
+
+@router.post("/gestor_principal/reset-password")
+def gestor_reset_password(request: schemas.ResetPasswordRequest, db: Session = Depends(get_db)):
+    """
+    Cambia la contraseña del Gestor Principal
+    """
+    from datetime import datetime
+
+    db_token = db.query(modelos.PasswordResetToken).filter(
+        modelos.PasswordResetToken.token == request.token,
+        modelos.PasswordResetToken.dueno_id.is_(None)
+    ).first()
+
+    if not db_token:
+        raise HTTPException(status_code=400, detail="Código inválido o ya utilizado.")
+
+    if db_token.expires_at < datetime.now():
+        db.delete(db_token)
+        db.commit()
+        raise HTTPException(status_code=400, detail="El código ha expirado.")
+
+    # Como solo hay un Gestor Principal, lo buscamos directamente
+    gestor = db.query(modelos.GestorPrincipal).first()
+    if not gestor:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+
+    # Cambiar contraseña
+    hashed_password = pwd_context.hash(request.nueva_contraseña)
+    gestor.contraseña = hashed_password
+    db.commit()
+
+    # Eliminar token usado
+    db.delete(db_token)
+    db.commit()
+
+    return {"message": "¡Contraseña actualizada exitosamente!"}

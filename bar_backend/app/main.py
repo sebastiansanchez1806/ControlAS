@@ -15,7 +15,7 @@ import app.schemas as schemas
 from app.schemas import generate_history_html
 from app.vistas import limpiar_tareas_completadas_mensual
 from sqlalchemy.orm import Session
-
+import os
 logging.basicConfig()
 logging.getLogger('apscheduler').setLevel(logging.DEBUG)
 
@@ -33,7 +33,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+if os.path.exists("app/static"):
+    app.mount("/static", StaticFiles(directory="app/static"), name="static")
 app.include_router(vistas.router)
 
 def limpiar_historial_mensual():

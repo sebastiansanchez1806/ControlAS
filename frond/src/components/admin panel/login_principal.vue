@@ -70,6 +70,12 @@
           </div>
         </div>
 
+        <div class="forgot-password-container">
+          <button type="button" @click="handleForgotPassword" class="forgot-password-link">
+            ¿Olvidaste tu contraseña?
+          </button>
+        </div>
+
         <button type="submit" class="btn-continuar" :disabled="isLoading">
           <span v-if="!isLoading">Iniciar Sesión</span>
           <span v-else>Iniciando sesión...</span>
@@ -90,7 +96,7 @@
 import { API_BASE_URL } from '@/config/api';
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { useGestorPrincipalStore } from '@/stores/gestorPrincipal';  // ← IMPORTANTE
+import { useGestorPrincipalStore } from '@/stores/gestorPrincipal';
 import Swal from 'sweetalert2';
 
 const email = ref('');
@@ -99,7 +105,7 @@ const passwordFieldType = ref('password');
 const isLoading = ref(false);
 
 const router = useRouter();
-const gestorStore = useGestorPrincipalStore();  // ← EL STORE
+const gestorStore = useGestorPrincipalStore();
 
 const togglePasswordVisibility = () => {
   passwordFieldType.value = passwordFieldType.value === 'password' ? 'text' : 'password';
@@ -121,10 +127,8 @@ const handleLogin = async () => {
     const data = await response.json();
 
     if (response.ok) {
-      // ¡LOGIN CORRECTO! Guardamos en el store
-      gestorStore.login(data);  // ← Esto guarda en Pinia + localStorage
+      gestorStore.login(data);
 
-      // Mostrar mensaje bonito
       await Swal.fire({
         icon: 'success',
         title: '¡Bienvenido!',
@@ -133,7 +137,6 @@ const handleLogin = async () => {
         timer: 2000,
         timerProgressBar: true,
         willClose: () => {
-          // Redirigir cuando se cierre el modal
           router.push({ name: 'home_admin_principal' });
         }
       });
@@ -158,7 +161,182 @@ const handleLogin = async () => {
     isLoading.value = false;
   }
 };
+
+const handleForgotPassword = async () => {
+  // Paso 1: Pedir correo
+  const { value: userEmail, isConfirmed } = await Swal.fire({
+    title: '¿Olvidaste tu contraseña?',
+    input: 'email',
+    inputLabel: 'Ingresa tu correo electrónico',
+    inputPlaceholder: 'admin@controlas.com',
+    inputValue: email.value,
+    showCancelButton: true,
+    confirmButtonText: 'Enviar código',
+    cancelButtonText: 'Cancelar',
+    inputValidator: (value) => {
+      if (!value) return 'Debes ingresar un correo';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Correo inválido';
+    }
+  });
+
+  if (!isConfirmed || !userEmail) return;
+
+  // Mostrar loading
+  Swal.fire({
+    title: 'Enviando código...',
+    text: 'Por favor espera',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/gestor_principal/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo: userEmail })
+    });
+
+    // Siempre procesar la respuesta, aunque sea error
+    const data = await response.json();
+
+    // Si el backend devuelve error (ej: 404, 500)
+    if (!response.ok) {
+      throw new Error(data.detail || data.message || 'Error del servidor');
+    }
+
+    // Éxito: código enviado
+    await Swal.fire({
+      icon: 'success',
+      title: '¡Código enviado!',
+      text: `Revisa tu bandeja (y spam) en: ${userEmail}`,
+      timer: 4000,
+      timerProgressBar: true
+    });
+
+    // === Continuar con el flujo de verificación ===
+    let codigoValido = false;
+    let token = null;
+
+    while (!codigoValido) {
+      const { value: code, dismiss } = await Swal.fire({
+        title: 'Ingresa el código de 6 dígitos',
+        input: 'text',
+        inputLabel: 'Código recibido por correo',
+        inputPlaceholder: '123456',
+        showCancelButton: true,
+        confirmButtonText: 'Verificar código'
+      });
+
+      if (dismiss || !code) {
+        await Swal.fire('Cancelado', 'Proceso de recuperación cancelado', 'info');
+        return;
+      }
+
+      // Verificar código
+      Swal.fire({
+        title: 'Verificando...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      try {
+        const resetResponse = await fetch(`${API_BASE_URL}/gestor_principal/reset-password`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: code.trim() })  // Primero solo verificamos token
+        });
+
+        if (resetResponse.ok) {
+          codigoValido = true;
+          token = code.trim();
+          Swal.close(); // Cerrar loading
+        } else {
+          const errorData = await resetResponse.json();
+          throw new Error(errorData.detail || 'Código incorrecto o expirado');
+        }
+      } catch (err) {
+        await Swal.fire({
+          icon: 'error',
+          title: 'Código inválido',
+          text: err.message,
+          confirmButtonText: 'Intentar de nuevo'
+        });
+      }
+    }
+
+    // === Ahora sí: pedir nueva contraseña ===
+    const { value: passwords, isConfirmed: passOk } = await Swal.fire({
+      title: 'Crear nueva contraseña',
+      html: `
+        <input id="swal-pass1" type="password" class="swal2-input" placeholder="Nueva contraseña (mín. 6 caracteres)">
+        <input id="swal-pass2" type="password" class="swal2-input" placeholder="Repetir contraseña">
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'Cambiar contraseña',
+      preConfirm: () => {
+        const p1 = document.getElementById('swal-pass1').value;
+        const p2 = document.getElementById('swal-pass2').value;
+        if (!p1 || !p2) {
+          Swal.showValidationMessage('Ambos campos son obligatorios');
+          return false;
+        }
+        if (p1.length < 6) {
+          Swal.showValidationMessage('Mínimo 6 caracteres');
+          return false;
+        }
+        if (p1 !== p2) {
+          Swal.showValidationMessage('Las contraseñas no coinciden');
+          return false;
+        }
+        return { nueva_contraseña: p1 };
+      }
+    });
+
+    if (!passOk) return;
+
+    // Enviar cambio final
+    Swal.fire({
+      title: 'Guardando nueva contraseña...',
+      allowOutsideClick: false,
+      didOpen: () => Swal.showLoading()
+    });
+
+    const finalResponse = await fetch(`${API_BASE_URL}/gestor_principal/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: token,
+        nueva_contraseña: passwords.nueva_contraseña
+      })
+    });
+
+    if (!finalResponse.ok) {
+      const err = await finalResponse.json();
+      throw new Error(err.detail || 'Error al cambiar contraseña');
+    }
+
+    await Swal.fire({
+      icon: 'success',
+      title: '¡Contraseña cambiada!',
+      text: 'Ya puedes iniciar sesión con tu nueva contraseña.',
+      timer: 5000,
+      timerProgressBar: true
+    });
+
+  } catch (error) {
+    console.error('Error en recuperación:', error);
+    await Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: error.message || 'No se pudo conectar con el servidor. Verifica tu conexión o intenta más tarde.'
+    });
+  }
+};
 </script>
+
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
@@ -386,6 +564,53 @@ input:disabled {
   background: rgba(102, 126, 234, 0.1);
 }
 
+/* Botón de olvidar contraseña */
+.forgot-password-container {
+  text-align: right;
+  margin-top: -8px;
+  animation: fadeIn 0.6s ease-out 0.25s backwards;
+}
+
+.forgot-password-link {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  font-family: inherit;
+  position: relative;
+}
+
+.forgot-password-link::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: 6px;
+  left: 50%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+.forgot-password-link:hover {
+  color: #764ba2;
+  background: rgba(102, 126, 234, 0.05);
+  transform: translateY(-2px);
+}
+
+.forgot-password-link:hover::after {
+  width: 80%;
+}
+
+.forgot-password-link:active {
+  transform: translateY(0);
+}
+
 /* Botón principal */
 .btn-continuar {
   width: 100%;
@@ -512,6 +737,10 @@ input:disabled {
     padding: 12px 14px;
     font-size: 14px;
     border-radius: 10px;
+  }
+
+  .forgot-password-link {
+    font-size: 13px;
   }
 
   .btn-continuar {
