@@ -1145,3 +1145,21 @@ class DuenoUpdate(BaseModel):
 
 class VerifyCodeRequest(BaseModel):
     token: str
+
+
+# --- Esquemas para Gestor Principal ---
+class GestorPrincipalUpdate(BaseModel):
+    nombre: Optional[str] = None
+    correo: Optional[str] = None
+
+class GestorPrincipalPasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str
+
+class GestorPrincipalOut(BaseModel):
+    id: int
+    nombre: str
+    correo: str
+
+    class Config:
+        from_attributes = True

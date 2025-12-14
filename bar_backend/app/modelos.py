@@ -260,3 +260,8 @@ class DetalleFacturaInventario(Base):
 
     factura_inventario = relationship("FacturaInventario", back_populates="detalles")
     producto = relationship("Producto")
+
+
+
+
+

@@ -25,7 +25,7 @@ from sqlalchemy.orm import joinedload
 
 from conexion import get_db
 from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInventario, Dueno, Factura, FacturaInventario, Gasto, GestorPrincipal, Historial, Mujer, NotificacionExamenEnviada, Producto, ProductoEliminado, Tarea
-from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash
+from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -2391,3 +2391,71 @@ def gestor_verify_reset_code(request: schemas.VerifyCodeRequest, db: Session = D
         raise HTTPException(status_code=400, detail="El código ha expirado.")
 
     return {"message": "Código válido", "token": request.token}
+
+
+
+
+
+@router.get("/gestor_principal", response_model=GestorPrincipalOut)
+def obtener_gestor_principal(db: Session = Depends(get_db)):
+    """Obtiene los datos del único Gestor Principal"""
+    gestor = db.query(GestorPrincipal).first()
+    if not gestor:
+        raise HTTPException(status_code=404, detail="Gestor Principal no encontrado")
+    return gestor
+
+
+@router.put("/gestor_principal/update", response_model=GestorPrincipalOut)
+def actualizar_gestor_principal(
+    update_data: GestorPrincipalUpdate,
+    current_password: str = Form(...),  # Se enviará desde frontend
+    db: Session = Depends(get_db)
+):
+    """Actualiza nombre y/o correo del Gestor Principal (requiere contraseña actual)"""
+    gestor = db.query(GestorPrincipal).first()
+    if not gestor:
+        raise HTTPException(status_code=404, detail="Gestor Principal no encontrado")
+
+    # Verificar contraseña actual
+    if not pwd_context.verify(current_password, gestor.contraseña):
+        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+
+    # Validar correo único si se está cambiando
+    if update_data.correo and update_data.correo != gestor.correo:
+        if db.query(GestorPrincipal).filter(GestorPrincipal.correo == update_data.correo).first():
+            raise HTTPException(status_code=400, detail="El correo ya está en uso")
+
+    # Aplicar cambios
+    if update_data.nombre:
+        gestor.nombre = update_data.nombre
+    if update_data.correo:
+        gestor.correo = update_data.correo
+
+    db.commit()
+    db.refresh(gestor)
+    return gestor
+
+
+@router.put("/gestor_principal/password")
+def cambiar_contraseña_gestor(
+    password_data: GestorPrincipalPasswordUpdate,
+    db: Session = Depends(get_db)
+):
+    """Cambia la contraseña del Gestor Principal"""
+    gestor = db.query(GestorPrincipal).first()
+    if not gestor:
+        raise HTTPException(status_code=404, detail="Gestor Principal no encontrado")
+
+    # Verificar contraseña actual
+    if not pwd_context.verify(password_data.current_password, gestor.contraseña):
+        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
+
+    # Validar que la nueva contraseña tenga al menos 6 caracteres
+    if len(password_data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="La nueva contraseña debe tener al menos 6 caracteres")
+
+    # Actualizar contraseña
+    gestor.contraseña = pwd_context.hash(password_data.new_password)
+    db.commit()
+
+    return {"message": "Contraseña actualizada exitosamente"}
