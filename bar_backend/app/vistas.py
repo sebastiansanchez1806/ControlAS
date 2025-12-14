@@ -681,20 +681,17 @@ def obtener_historial_por_bar(
 
 @router.get("/productos_por_bar2/{bar_id}", response_model=List[schemas.ProductoOut])
 def get_productos_para_facturar(bar_id: int, db: Session = Depends(get_db)):
-    """
-    Obtiene todos los productos de un bar específico cuya cantidad actual sea mayor a 0.
-    Este endpoint se usaría para cargar la lista inicial de productos en el componente de Vue.
-    """
+
     productos = db.query(modelos.Producto).filter(
         modelos.Producto.bar_id == bar_id,
-        modelos.Producto.cantidad > 0
+        modelos.Producto.cantidad > 0,
+        modelos.Producto.estado == 'activo'  # ← AQUÍ ESTÁ LA CLAVE
     ).all()
     
     if not productos:
         return []
     
     return productos
-
 @router.post("/generar_factura", response_model=schemas.FacturaOut, status_code=status.HTTP_201_CREATED)
 def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = Depends(get_db)):    
     db_bar = db.query(modelos.Bar).filter(modelos.Bar.id == factura_data.bar_id).first()

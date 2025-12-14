@@ -519,6 +519,7 @@ const getSettingsModalTitle = () => {
   return titles[activeSettingsModal.value] || ''
 }
 
+// === MÉTODO CLAVE CORREGIDO ===
 const handleSettingsSubmit = async () => {
   settingsError.value = ''
   settingsLoading.value = true
@@ -556,21 +557,31 @@ const handleSettingsSubmit = async () => {
     let response
 
     if (activeSettingsModal.value === 'password') {
+      // Cambio de contraseña → JSON body (como antes)
       response = await axios.put('/api/gestor_principal/password', {
         current_password: currentPassword.value,
         new_password: settingsNewValue.value
       })
     } else {
-      const payload = {}
-      if (activeSettingsModal.value === 'name') payload.nombre = settingsNewValue.value
-      if (activeSettingsModal.value === 'email') payload.correo = settingsNewValue.value
+      // Cambio de nombre o correo → FormData (obligatorio por Form(...) en backend)
+      const formData = new FormData()
+      if (activeSettingsModal.value === 'name') {
+        formData.append('nombre', settingsNewValue.value)
+      } else if (activeSettingsModal.value === 'email') {
+        formData.append('correo', settingsNewValue.value)
+      }
+      formData.append('current_password', currentPassword.value)
 
-      response = await axios.put('/api/gestor_principal/update', payload, {
-        params: { current_password: currentPassword.value }
+      response = await axios.put('/api/gestor_principal/update', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       })
 
-      if (activeSettingsModal.value === 'name') currentGestorData.value.nombre = settingsNewValue.value
-      if (activeSettingsModal.value === 'email') currentGestorData.value.correo = settingsNewValue.value
+      // Actualizar vista local
+      if (activeSettingsModal.value === 'name') {
+        currentGestorData.value.nombre = settingsNewValue.value
+      } else if (activeSettingsModal.value === 'email') {
+        currentGestorData.value.correo = settingsNewValue.value
+      }
     }
 
     closeSettingsModal()
@@ -586,14 +597,19 @@ const handleSettingsSubmit = async () => {
     })
 
   } catch (err) {
-    const msg = err.response?.data?.detail || 'Error al guardar los cambios'
+    let msg = 'Error al guardar los cambios'
+    if (err.response?.data?.detail) {
+      msg = err.response.data.detail
+      if (msg.includes('incorrecta')) msg = 'Contraseña actual incorrecta'
+      if (msg.includes('en uso')) msg = 'Este correo ya está en uso'
+    }
     settingsError.value = msg
   } finally {
     settingsLoading.value = false
   }
 }
 
-// Métodos de dueños
+// Métodos de dueños (sin cambios)
 const confirmDelete = (dueno) => {
   Swal.fire({
     title: `¿Eliminar a ${dueno.nombre}?`,
@@ -766,7 +782,6 @@ const logout = () => {
   })
 }
 </script>
-
 <style scoped>
 * {
   margin: 0;
@@ -980,7 +995,7 @@ const logout = () => {
   display: flex;
   justify-content: center;
   align-items: center;
-  z-index: 10000;
+  z-index: 100;
   backdrop-filter: blur(8px);
   animation: fadeInOverlay 0.3s ease-out;
 }
