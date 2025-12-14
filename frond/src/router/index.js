@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { useAdminStore } from '@/stores/admin';
 import { useGestorPrincipalStore } from '@/stores/gestorPrincipal'; // ← NUEVO IMPORT
-
+import info_locales from '@/components/admin panel/info_locales.vue';
 import LoginView from '@/components/login.vue';
 import LocalesView from '@/components/locales.vue';
 import Personal_femenino from '@/components/personal_femenino.vue';
@@ -26,6 +26,13 @@ const routes = [
     name: 'LoginGestorPrincipal',
     component: Login_principal
   },
+  {
+  path: '/info_locales/:barId',
+  name: 'InfoLocales',
+  component: info_locales,
+  props: true,  // Para que reciba barId como prop
+  meta: { requiresGestorPrincipal: true }  // Solo accesible si estás logueado como gestor principal
+},
   {
     path: '/home_admin_principal',
     name: 'home_admin_principal',
@@ -57,26 +64,29 @@ const router = createRouter({
 router.beforeEach((to, from, next) => {
   const userStore = useUserStore();
   const adminStore = useAdminStore();
-  const gestorStore = useGestorPrincipalStore(); // ← EL STORE DEL GESTOR
+  const gestorStore = useGestorPrincipalStore();
 
   const isDueno = userStore.isLoggedIn && userStore.tipo === 'dueno';
   const isAdmin = adminStore.id !== null;
   const isGestorPrincipal = gestorStore.isLoggedIn();
 
-  // 1. PROTECCIÓN DEL GESTOR PRINCIPAL (lo más importante primero)
-  if (to.name === 'home_admin_principal') {
-    return isGestorPrincipal ? next() : next({ name: 'LoginGestorPrincipal' });
+  // === PROTECCIÓN PARA GESTOR PRINCIPAL (todas las rutas con meta.requiresGestorPrincipal) ===
+  if (to.meta.requiresGestorPrincipal) {
+    return isGestorPrincipal 
+      ? next() 
+      : next({ name: 'LoginGestorPrincipal' });
   }
 
+  // Si está logueado como gestor y va al login, redirigir al panel
   if (to.name === 'LoginGestorPrincipal' && isGestorPrincipal) {
     return next({ name: 'home_admin_principal' });
   }
 
-  // 2. RUTAS NORMALES DE DUEÑO Y ADMIN (tu lógica original)
+  // === RUTAS NORMALES DE DUEÑO Y ADMIN ===
   const isAuthenticated = isDueno || isAdmin;
   const isPublicRoute = to.name === 'Login' || to.name === 'recuperar';
 
-  if (to.meta.requiresAuth && !isAuthenticated && !isGestorPrincipal) {
+  if (to.meta.requiresAuth && !isAuthenticated) {
     return next({ name: 'Login' });
   }
 
@@ -89,8 +99,6 @@ router.beforeEach((to, from, next) => {
     if (to.meta.requiresAdmin && !isAdmin) return next({ name: 'Locales' });
   }
 
-  // Todo bien
   next();
 });
-
 export default router;

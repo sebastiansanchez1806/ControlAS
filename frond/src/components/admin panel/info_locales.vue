@@ -1,10 +1,33 @@
 <template>
   <div class="panel-de-control">
+    <!-- Loader global -->
+    <div v-if="loading" class="loading-overlay">
+      <div class="spinner"></div>
+      <p>Cargando datos del bar ID: {{ barId || 'detectando...' }}</p>
+    </div>
+
+    <!-- Error general -->
+    <div v-if="error" class="error-message">
+      <p>⚠️ {{ error }}</p>
+      <button @click="loadData" class="btn-retry">Reintentar</button>
+    </div>
+
+    <!-- Modal de imagen -->
+    <div v-if="imageModalOpen" class="image-modal" @click="closeImageModal">
+      <div class="modal-content" @click.stop>
+        <img :src="modalImageSrc" alt="Imagen ampliada" class="modal-image" />
+        <button @click="closeImageModal" class="modal-close">
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </div>
+
     <!-- Header fijo con navegación integrada -->
     <header class="header">
       <div class="header-left">
         <h1 class="header-title">
           <span class="pink-text">P</span>anel de <span class="cyan-text">G</span>estión
+          <small v-if="barId" class="bar-id-info">Bar ID: {{ barId }}</small>
         </h1>
       </div>
       
@@ -14,7 +37,7 @@
           :class="['nav-button', { active: currentView === 'administradores' }]"
         >
           <i class="fas fa-user-shield"></i> 
-          <span class="nav-text">Administradores</span>
+          <span class="nav-text">Admins</span>
         </button>
         <button 
           @click="setView('productos')" 
@@ -22,13 +45,6 @@
         >
           <i class="fas fa-boxes"></i> 
           <span class="nav-text">Productos</span>
-        </button>
-        <button 
-          @click="setView('mujeres')" 
-          :class="['nav-button', { active: currentView === 'mujeres' }]"
-        >
-          <i class="fas fa-female"></i> 
-          <span class="nav-text">Mujeres</span>
         </button>
       </nav>
 
@@ -44,8 +60,29 @@
       <div v-if="currentView === 'administradores'" class="list-section">
         <div class="section-header">
           <h2 class="section-title pink-gradient">
-            <i class="fas fa-user-shield"></i> Gestión de Administradores
+            <i class="fas fa-user-shield"></i> 
+            <span class="title-text">Gestión de Administradores</span>
           </h2>
+        </div>
+
+        <!-- Buscador Administradores -->
+        <div class="search-container">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              v-model="searchAdmin" 
+              type="text" 
+              placeholder="Buscar por nombre, correo o documento..."
+              class="search-input"
+            />
+            <button 
+              v-if="searchAdmin" 
+              @click="searchAdmin = ''"
+              class="clear-btn"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
         </div>
         
         <div class="table-container">
@@ -54,33 +91,83 @@
               <tr>
                 <th>Foto</th>
                 <th>Nombre</th>
-                <th>Correo</th>
-                <th>Documento</th>
-                <th>Teléfono</th>
-                <th>Agregado</th>
+                <th class="hide-mobile">Correo</th>
+                <th class="hide-mobile">Documento</th>
+                <th class="hide-mobile">Teléfono</th>
+                <th class="hide-tablet">Agregado</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="admin in administradoresData" :key="admin.id">
-                <td><img :src="admin.foto" alt="Foto Admin" class="profile-thumb" /></td>
-                <td class="text-white">{{ admin.nombre }}</td>
-                <td class="text-muted">{{ admin.correo }}</td>
-                <td class="text-muted">{{ admin.documento }}</td>
-                <td class="text-muted">{{ admin.telefono }}</td>
-                <td class="text-muted">{{ admin.fecha_agregado }}</td>
+              <tr v-for="admin in filteredAdministradores" :key="admin.id">
+                <td>
+                  <div class="image-zoom-wrapper">
+                    <img 
+                      :src="admin.foto" 
+                      alt="Foto Admin" 
+                      class="profile-thumb" 
+                      @click="openImageModal(admin.foto)"
+                    />
+                  </div>
+                </td>
+                <td class="text-white">
+                  <div class="cell-content">
+                    <span class="name-text">{{ admin.nombre || 'Sin nombre' }}</span>
+                    <div class="mobile-only info-grid">
+                      <div class="info-item">
+                        <span class="info-label">📧</span>
+                        <span class="info-value">{{ admin.correo || '-' }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="info-label">🆔</span>
+                        <span class="info-value">{{ admin.documento || '-' }}</span>
+                      </div>
+                      <div class="info-item">
+                        <span class="info-label">📱</span>
+                        <span class="info-value">{{ admin.telefono || '-' }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+                <td class="text-muted hide-mobile">{{ admin.correo || '-' }}</td>
+                <td class="text-muted hide-mobile">{{ admin.documento || '-' }}</td>
+                <td class="text-muted hide-mobile">{{ admin.telefono || '-' }}</td>
+                <td class="text-muted hide-tablet">{{ formatDate(admin.fecha_agregado) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p v-if="administradoresData.length === 0" class="no-data">No hay administradores registrados.</p>
+        <p v-if="filteredAdministradores.length === 0 && !loading" class="no-data">
+          {{ searchAdmin ? 'No se encontraron resultados' : 'No hay administradores registrados.' }}
+        </p>
       </div>
 
       <!-- PRODUCTOS -->
       <div v-else-if="currentView === 'productos'" class="list-section">
         <div class="section-header">
           <h2 class="section-title cyan-gradient">
-            <i class="fas fa-boxes"></i> Inventario de Productos
+            <i class="fas fa-boxes"></i> 
+            <span class="title-text">Inventario de Productos</span>
           </h2>
+        </div>
+
+        <!-- Buscador Productos -->
+        <div class="search-container">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input 
+              v-model="searchProduct" 
+              type="text" 
+              placeholder="Buscar producto por nombre..."
+              class="search-input"
+            />
+            <button 
+              v-if="searchProduct" 
+              @click="searchProduct = ''"
+              class="clear-btn"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
         </div>
 
         <!-- CARD DE VALOR TOTAL DEL INVENTARIO -->
@@ -90,7 +177,7 @@
               <i class="fas fa-money-bill-wave"></i>
             </div>
             <div class="summary-content">
-              <p class="summary-label">Valor Total del Inventario</p>
+              <p class="summary-label">Valor Total</p>
               <p class="summary-value">{{ formatPrice(calcularValorInventario()) }}</p>
             </div>
           </div>
@@ -99,8 +186,8 @@
               <i class="fas fa-box"></i>
             </div>
             <div class="summary-content">
-              <p class="summary-label">Total de Productos</p>
-              <p class="summary-value">{{ calcularTotalProductos() }} unidades</p>
+              <p class="summary-label">Total Productos</p>
+              <p class="summary-value">{{ calcularTotalProductos() }}</p>
             </div>
           </div>
         </div>
@@ -111,203 +198,216 @@
               <tr>
                 <th>Imagen</th>
                 <th>Nombre</th>
-                <th>Cantidad</th>
-                <th>Precio Unit.</th>
-                <th>Valor Total</th>
+                <th>Cant.</th>
+                <th class="hide-mobile">Precio</th>
+                <th class="hide-tablet">Total</th>
                 <th>Estado</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="prod in productosData" :key="prod.id">
-                <td><img :src="prod.imagen" alt="Imagen Producto" class="product-thumb" /></td>
-                <td class="text-white">{{ prod.nombre }}</td>
-                <td class="text-cyan">{{ prod.cantidad }}</td>
-                <td class="text-muted">{{ formatPrice(prod.precio) }}</td>
-                <td class="text-pink font-bold">{{ formatPrice(prod.cantidad * prod.precio) }}</td>
-                <td><span :class="['estado-badge', prod.estado]">{{ prod.estado }}</span></td>
+              <tr v-for="prod in filteredProductos" :key="prod.id">
+                <td>
+                  <div class="image-zoom-wrapper">
+                    <img 
+                      :src="prod.imagen" 
+                      alt="Imagen Producto" 
+                      class="product-thumb" 
+                      @click="openImageModal(prod.imagen)"
+                    />
+                  </div>
+                </td>
+                <td class="text-white">
+                  <div class="cell-content">
+                    <span class="name-text">{{ prod.nombre || 'Sin nombre' }}</span>
+                    <span class="mobile-only subtitle-text">{{ formatPrice(prod.precio) }}</span>
+                  </div>
+                </td>
+                <td class="text-cyan">{{ prod.cantidad ?? 0 }}</td>
+                <td class="text-muted hide-mobile">{{ formatPrice(prod.precio) }}</td>
+                <td class="text-pink font-bold hide-tablet">{{ formatPrice((prod.cantidad ?? 0) * (prod.precio ?? 0)) }}</td>
+                <td><span :class="['estado-badge', prod.estado || 'activo']">{{ (prod.estado || 'activo').charAt(0).toUpperCase() + (prod.estado || 'activo').slice(1) }}</span></td>
               </tr>
             </tbody>
           </table>
         </div>
-        <p v-if="productosData.length === 0" class="no-data">No hay productos registrados.</p>
-      </div>
-
-      <!-- MUJERES -->
-      <div v-else-if="currentView === 'mujeres'" class="list-section">
-        <div class="section-header">
-          <h2 class="section-title pink-gradient">
-            <i class="fas fa-female"></i> Registro de Empleadas/Personal
-          </h2>
-        </div>
-        
-        <div class="table-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Foto</th>
-                <th>Nombre</th>
-                <th>Teléfono</th>
-                <th>Agregado</th>
-                <th>Examen Médico</th>
-                <th>Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="mujer in mujeresData" :key="mujer.id">
-                <td><img :src="mujer.foto" alt="Foto Mujer" class="profile-thumb" /></td>
-                <td class="text-white">{{ mujer.nombre }}</td>
-                <td class="text-muted">{{ mujer.telefono || 'N/A' }}</td>
-                <td class="text-muted">{{ mujer.fecha_agregado }}</td>
-                <td>
-                  <span :class="{'examen-ok': mujer.fecha_examen, 'examen-pend': !mujer.fecha_examen}">
-                    {{ mujer.fecha_examen ? '✅ Realizado' : '⚠️ Pendiente' }}
-                  </span>
-                </td>
-                <td>
-                  <button 
-                    v-if="mujer.foto_examen" 
-                    @click="openExamModal(mujer)" 
-                    class="btn-action"
-                  >
-                    <i class="fas fa-eye"></i> Ver
-                  </button>
-                  <span v-else class="text-muted">Sin documento</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p v-if="mujeresData.length === 0" class="no-data">No hay personal registrado.</p>
+        <p v-if="filteredProductos.length === 0 && !loading" class="no-data">
+          {{ searchProduct ? 'No se encontraron resultados' : 'No hay productos registrados.' }}
+        </p>
       </div>
     </main>
-
-    <!-- Modal -->
-    <div v-if="showExamModal" class="modal-overlay" @click.self="closeExamModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3 class="modal-title">Examen Médico de {{ selectedMujer.nombre }}</h3>
-          <button @click="closeExamModal" class="btn-close-modal">
-            <i class="fas fa-times"></i>
-          </button>
-        </div>
-        <div class="modal-body">
-          <img 
-            :src="selectedMujer.foto_examen" 
-            alt="Imagen del Examen Médico" 
-            class="full-image" 
-            v-if="isImage(selectedMujer.foto_examen)"
-          >
-          <p v-else class="no-data-modal">El documento no es una imagen o no está disponible.</p>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script>
+import axios from 'axios'
+import { API_BASE_URL } from '@/config/api'
+
 export default {
   data() {
     return {
       currentView: 'administradores',
       administradoresData: [],
       productosData: [],
-      mujeresData: [],
-      showExamModal: false,
-      selectedMujer: null,
+      searchAdmin: '',
+      searchProduct: '',
+      loading: true,
+      error: null,
+      barId: null,
+      imageModalOpen: false,
+      modalImageSrc: '',
       defaultProfilePhoto: 'https://static.vecteezy.com/system/resources/thumbnails/065/748/662/small_2x/gray-placeholder-man-and-woman-avatar-default-user-icon-set-social-media-user-profile-icon-free-vector.jpg',
       defaultProductPhoto: 'https://shop.farmranchstore.com/cdn/shop/products/noimage-found_ae031b94-ce16-49e4-9d55-c0993c30e771_500x.png?v=1697660801',
-      simulatedExamImage: 'https://via.placeholder.com/800x600/1a1a1a/00d4ff?text=Examen+Médico'
-    };
+    }
+  },
+
+  computed: {
+    filteredAdministradores() {
+      if (!this.searchAdmin) return this.administradoresData
+      const search = this.searchAdmin.toLowerCase()
+      return this.administradoresData.filter(admin =>
+        (admin.nombre || '').toLowerCase().includes(search) ||
+        (admin.correo || '').toLowerCase().includes(search) ||
+        (admin.documento || '').includes(search) ||
+        (admin.telefono || '').includes(search)
+      )
+    },
+
+    filteredProductos() {
+      if (!this.searchProduct) return this.productosData
+      const search = this.searchProduct.toLowerCase()
+      return this.productosData.filter(prod =>
+        (prod.nombre || '').toLowerCase().includes(search)
+      )
+    }
   },
 
   methods: {
+    openImageModal(imageSrc) {
+      this.modalImageSrc = imageSrc
+      this.imageModalOpen = true
+      document.body.style.overflow = 'hidden'
+    },
+
+    closeImageModal() {
+      this.imageModalOpen = false
+      this.modalImageSrc = ''
+      document.body.style.overflow = 'auto'
+    },
+
     goBack() {
-      window.history.back();
+      window.history.back()
     },
 
     setView(viewName) {
-      this.currentView = viewName;
-    },
-
-    openExamModal(mujer) {
-      this.selectedMujer = mujer;
-      this.showExamModal = true;
-    },
-
-    closeExamModal() {
-      this.showExamModal = false;
-      this.selectedMujer = null;
-    },
-
-    isImage(url) {
-      return url && (url.startsWith('http') || url.startsWith('data:image/'));
+      this.currentView = viewName
+      this.searchAdmin = ''
+      this.searchProduct = ''
     },
 
     formatPrice(value) {
+      if (!value && value !== 0) return '$0'
       return new Intl.NumberFormat('es-CO', {
         style: 'currency',
         currency: 'COP',
         minimumFractionDigits: 0,
         maximumFractionDigits: 0,
-      }).format(value);
+      }).format(value)
+    },
+
+    formatDate(dateStr) {
+      if (!dateStr) return '-'
+      const date = new Date(dateStr)
+      return isNaN(date) ? '-' : date.toLocaleDateString('es-CO')
     },
 
     calcularValorInventario() {
       return this.productosData.reduce((total, producto) => {
-        return total + (producto.cantidad * producto.precio);
-      }, 0);
+        return total + ((producto.cantidad || 0) * (producto.precio || 0))
+      }, 0)
     },
 
     calcularTotalProductos() {
       return this.productosData.reduce((total, producto) => {
-        return total + producto.cantidad;
-      }, 0);
+        return total + (producto.cantidad || 0)
+      }, 0)
+    },
+
+    extractBarIdFromUrl() {
+      const path = window.location.pathname
+      const match = path.match(/\/info_locales\/(\d+)/)
+      if (match) {
+        this.barId = parseInt(match[1], 10)
+      } else {
+        this.error = 'No se pudo detectar el ID del bar en la URL'
+        this.loading = false
+      }
     },
 
     async fetchAdministradores() {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      this.administradoresData = [
-        { id: 1, nombre: 'Juan Pérez', correo: 'juan@bar.com', documento: '100123456', telefono: '3001112233', fecha_agregado: '2024-10-01', foto: this.defaultProfilePhoto },
-        { id: 2, nombre: 'María López', correo: 'maria@bar.com', documento: '100654321', telefono: '3004445566', fecha_agregado: '2024-10-15', foto: this.defaultProfilePhoto },
-         { id: 2, nombre: 'María López', correo: 'maria@bar.com', documento: '100654321', telefono: '3004445566', fecha_agregado: '2024-10-15', foto: this.defaultProfilePhoto },
-      ];
+      if (!this.barId) return
+      try {
+        const response = await axios.get(`${API_BASE_URL}/administradores/bar/${this.barId}`)
+        const data = Array.isArray(response.data) ? response.data : []
+        this.administradoresData = data.map(admin => ({
+          ...admin,
+          foto: admin.foto || this.defaultProfilePhoto
+        }))
+      } catch (err) {
+        console.error('Error cargando administradores:', err)
+        this.error = 'Error al cargar administradores'
+        this.administradoresData = []
+      }
     },
 
     async fetchProductos() {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      this.productosData = [
-        { id: 101, nombre: 'Cerveza Corona', cantidad: 5, precio: 1000, estado: 'activo', imagen: this.defaultProductPhoto },
-        { id: 102, nombre: 'Agua Embotellada', cantidad: 5, precio: 1000, estado: 'activo', imagen: this.defaultProductPhoto },
-        { id: 103, nombre: 'Ron Viejo de Caldas', cantidad: 80, precio: 95000, estado: 'activo', imagen: this.defaultProductPhoto },
-        { id: 104, nombre: 'Whisky Jack Daniels', cantidad: 15, precio: 180000, estado: 'activo', imagen: this.defaultProductPhoto },
-      ];
+      if (!this.barId) return
+      try {
+        const response = await axios.get(`${API_BASE_URL}/productos_por_bar/${this.barId}`)
+        const data = Array.isArray(response.data) ? response.data : []
+        this.productosData = data.map(prod => ({
+          ...prod,
+          imagen: prod.imagen || this.defaultProductPhoto,
+          estado: prod.estado || 'activo'
+        }))
+      } catch (err) {
+        console.error('Error cargando productos:', err)
+        this.error = 'Error al cargar productos'
+        this.productosData = []
+      }
     },
 
-    async fetchMujeres() {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      this.mujeresData = [
-        { id: 201, nombre: 'Ana Gómez', telefono: '3101112233', fecha_agregado: '2024-11-01', fecha_examen: '2024-12-01', foto: this.defaultProfilePhoto, foto_examen: "https://medlineplus.gov/images/WomensHealthCheckup.jpg" },
-        { id: 202, nombre: 'Luisa Torres', telefono: '3104445566', fecha_agregado: '2024-11-15', fecha_examen: null, foto: this.defaultProfilePhoto, foto_examen: "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTs86OgihrChzCicuvCaKe1VG99ulSqmdqung&s" },
-        { id: 203, nombre: 'Sofia Rojas', telefono: '3107778899', fecha_agregado: '2024-12-05', fecha_examen: '2024-12-10', foto: this.defaultProfilePhoto, foto_examen: "https://www.clinicauandes.cl/images/default-source/365/novedad_mujer-exa-menes-(1).webp?sfvrsn=cf726d9e_2" },
-      ];
-    },
+    async loadData() {
+      this.loading = true
+      this.error = null
+      await Promise.all([
+        this.fetchAdministradores(),
+        this.fetchProductos()
+      ])
+      this.loading = false
+    }
   },
 
   mounted() {
-    this.fetchAdministradores();
-    this.fetchProductos();
-    this.fetchMujeres();
+    this.extractBarIdFromUrl()
+    if (this.barId) {
+      this.loadData()
+    } else {
+      this.loading = false
+    }
+  },
+
+  beforeUnmount() {
+    document.body.style.overflow = 'auto'
   }
-};
+}
 </script>
+
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
-/* COLORES PRINCIPALES */
+/* COLORES */
 .pink-text { color: #FF1493; }
 .cyan-text { color: #00d4ff; }
 .text-white { color: #ffffff; font-weight: 500; }
@@ -316,15 +416,72 @@ export default {
 .text-pink { color: #FF1493; }
 .font-bold { font-weight: 700; }
 
-/* CONTENEDOR PRINCIPAL */
+/* LAYOUT GENERAL */
 .panel-de-control {
   min-height: 100vh;
   background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
   font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
   color: #ffffff;
+  position: relative;
 }
 
-/* HEADER FIJO CON NAVEGACIÓN */
+/* LOADER */
+.loading-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  color: white;
+  font-size: 1.2rem;
+}
+
+.spinner {
+  width: 60px;
+  height: 60px;
+  border: 6px solid #333;
+  border-top: 6px solid #00d4ff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ERROR */
+.error-message {
+  text-align: center;
+  padding: 1.5rem;
+  background: rgba(255, 0, 0, 0.2);
+  color: #ff6b6b;
+  margin: 1rem;
+  border-radius: 12px;
+  border: 2px solid #ff006e;
+}
+
+.btn-retry {
+  margin-top: 1rem;
+  padding: 0.7rem 1.5rem;
+  background: #FF1493;
+  color: white;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-retry:hover {
+  background: #ff006e;
+  transform: translateY(-2px);
+}
+
+/* HEADER */
 .header {
   position: sticky;
   top: 0;
@@ -352,6 +509,16 @@ export default {
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+}
+
+.bar-id-info {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #9ca3af;
+  margin-top: 0.25rem;
+  background: none;
+  -webkit-text-fill-color: #9ca3af;
 }
 
 .header-nav {
@@ -459,6 +626,72 @@ export default {
   color: white;
 }
 
+/* BUSCADOR */
+.search-container {
+  margin-bottom: 2rem;
+}
+
+.search-box {
+  position: relative;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.search-icon {
+  position: absolute;
+  left: 1.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #00d4ff;
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+.search-input {
+  width: 100%;
+  padding: 1rem 3.5rem 1rem 3.5rem;
+  background: linear-gradient(135deg, #1f1f1f, #151515);
+  border: 2px solid #00d4ff;
+  border-radius: 16px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 500;
+  transition: all 0.3s;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: #6b7280;
+}
+
+.search-input:focus {
+  border-color: #FF1493;
+  box-shadow: 0 4px 20px rgba(255, 20, 147, 0.3);
+}
+
+.clear-btn {
+  position: absolute;
+  right: 1.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255, 20, 147, 0.2);
+  border: none;
+  color: #FF1493;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+}
+
+.clear-btn:hover {
+  background: #FF1493;
+  color: white;
+}
+
 /* RESUMEN DE INVENTARIO */
 .inventory-summary {
   display: grid;
@@ -533,7 +766,7 @@ export default {
 
 .data-table {
   width: 100%;
-  min-width: 700px;
+  min-width: 600px;
   border-collapse: collapse;
 }
 
@@ -565,6 +798,85 @@ export default {
   transform: scale(1.01);
 }
 
+/* MODAL DE IMAGEN */
+.image-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  padding: 2rem;
+  animation: fadeInModal 0.3s ease-in-out;
+  cursor: pointer;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  animation: zoomInImage 0.3s ease-in-out;
+}
+
+@keyframes zoomInImage {
+  from { 
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  to { 
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.modal-image {
+  max-width: 100%;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 16px;
+  border: 3px solid #FF1493;
+  box-shadow: 0 20px 80px rgba(255, 20, 147, 0.6);
+}
+
+.modal-close {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  width: 45px;
+  height: 45px;
+  background: linear-gradient(135deg, #FF1493, #ff006e);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  box-shadow: 0 4px 20px rgba(255, 20, 147, 0.6);
+}
+
+.modal-close:hover {
+  transform: rotate(90deg) scale(1.1);
+  background: linear-gradient(135deg, #ff006e, #c9004c);
+}
+
+/* WRAPPER DE IMÁGENES */
+.image-zoom-wrapper {
+  position: relative;
+  display: inline-block;
+}
+
 .profile-thumb, .product-thumb {
   width: 50px;
   height: 50px;
@@ -572,11 +884,70 @@ export default {
   border-radius: 12px;
   border: 2px solid #00d4ff;
   background-color: #1a1a1a;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  cursor: pointer;
 }
 
 .product-thumb {
   object-fit: contain;
   padding: 4px;
+}
+
+.profile-thumb:hover,
+.product-thumb:hover {
+  border-color: #FF1493;
+  box-shadow: 0 4px 20px rgba(255, 20, 147, 0.5);
+  transform: scale(1.1);
+}
+
+.cell-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.name-text {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.subtitle-text {
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.mobile-only {
+  display: none;
+}
+
+/* GRID DE INFORMACIÓN PARA MÓVIL */
+.info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.info-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(0, 212, 255, 0.08);
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border-left: 3px solid #00d4ff;
+}
+
+.info-label {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.info-value {
+  font-size: 0.85rem;
+  color: #e5e7eb;
+  font-weight: 500;
+  word-break: break-all;
 }
 
 .estado-badge {
@@ -600,122 +971,9 @@ export default {
   box-shadow: 0 4px 15px rgba(255, 0, 110, 0.4);
 }
 
-.examen-ok { 
-  color: #00d4ff; 
-  font-weight: 700;
-  text-shadow: 0 2px 10px rgba(0, 212, 255, 0.5);
-}
-
-.examen-pend { 
-  color: #ffc107; 
-  font-weight: 700;
-  text-shadow: 0 2px 10px rgba(255, 193, 7, 0.5);
-}
-
-.btn-action {
-  padding: 0.6rem 1rem;
-  background: linear-gradient(135deg, #00d4ff, #0099cc);
-  color: white;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 600;
-  transition: all 0.3s;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.btn-action:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(0, 212, 255, 0.5);
-}
-
 .no-data {
   text-align: center;
   padding: 3rem;
-  color: #9ca3af;
-  font-size: 1.1rem;
-}
-
-/* MODAL */
-.modal-overlay {
-  position: fixed;
-  top: 0; 
-  left: 0;
-  width: 100%; 
-  height: 100%;
-  background: rgba(0, 0, 0, 0.9);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-.modal-content {
-  background: linear-gradient(135deg, #1a1a1a, #0f0f0f);
-  border: 2px solid #FF1493;
-  border-radius: 20px;
-  width: 90%;
-  max-width: 800px;
-  max-height: 90vh;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(255, 20, 147, 0.5);
-}
-
-.modal-header {
-  padding: 1.5rem 2rem;
-  border-bottom: 2px solid #2d2d2d;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(135deg, #1f1f1f, #151515);
-}
-
-.modal-title {
-  margin: 0;
-  font-size: 1.3rem;
-  color: #00d4ff;
-  font-weight: 700;
-}
-
-.btn-close-modal {
-  background: rgba(255, 20, 147, 0.2);
-  border: 2px solid #FF1493;
-  color: #FF1493;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 1.2rem;
-  transition: all 0.3s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-close-modal:hover {
-  background: #FF1493;
-  color: white;
-  transform: rotate(90deg);
-}
-
-.modal-body {
-  padding: 2rem;
-  text-align: center;
-  overflow-y: auto;
-  max-height: calc(90vh - 100px);
-}
-
-.full-image {
-  max-width: 100%;
-  max-height: 70vh;
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-}
-
-.no-data-modal {
   color: #9ca3af;
   font-size: 1.1rem;
 }
@@ -733,40 +991,68 @@ export default {
   .content {
     padding: 1.5rem 1rem;
   }
+
+  .hide-tablet {
+    display: none;
+  }
 }
 
 @media (max-width: 768px) {
   .header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
+    padding: 0.75rem;
+    gap: 0.5rem;
   }
   
   .header-left {
+    width: 100%;
     text-align: center;
   }
   
   .header-title {
-    font-size: 1.3rem;
+    font-size: 1.2rem;
+  }
+
+  .bar-id-info {
+    font-size: 0.7rem;
   }
   
   .header-nav {
-    flex-direction: column;
+    width: 100%;
     gap: 0.5rem;
   }
-  
+
   .nav-button {
+    flex: 1;
     justify-content: center;
-    padding: 0.8rem;
+    padding: 0.65rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .nav-button i {
+    font-size: 1rem;
+  }
+
+  .nav-text {
+    font-size: 0.85rem;
   }
   
   .btn-volver {
+    width: 100%;
     justify-content: center;
+    padding: 0.65rem;
   }
   
   .section-title {
     font-size: 1.3rem;
     padding: 1rem;
+  }
+
+  .title-text {
+    display: none;
+  }
+
+  .section-title i {
+    font-size: 1.5rem;
   }
   
   .inventory-summary {
@@ -786,9 +1072,14 @@ export default {
   .summary-value {
     font-size: 1.5rem;
   }
+
+  .summary-label {
+    font-size: 0.85rem;
+  }
   
   .data-table {
     font-size: 0.9rem;
+    min-width: 500px;
   }
   
   .data-table th,
@@ -800,63 +1091,88 @@ export default {
     width: 40px;
     height: 40px;
   }
-  
-  .modal-content {
-    width: 95%;
-    max-height: 95vh;
+
+  .hide-mobile {
+    display: none;
   }
-  
-  .modal-header {
+
+  .mobile-only {
+    display: block;
+  }
+
+  .search-input {
+    font-size: 0.9rem;
+    padding: 0.9rem 3rem 0.9rem 3rem;
+  }
+
+  .search-icon {
+    font-size: 1rem;
+    left: 1rem;
+  }
+
+  .clear-btn {
+    width: 28px;
+    height: 28px;
+    right: 1rem;
+  }
+
+  .image-modal {
     padding: 1rem;
   }
-  
-  .modal-title {
-    font-size: 1.1rem;
-  }
-  
-  .modal-body {
-    padding: 1rem;
+
+  .modal-close {
+    width: 40px;
+    height: 40px;
+    font-size: 1.3rem;
+    top: -10px;
+    right: -10px;
   }
 }
 
 @media (max-width: 480px) {
+  .header {
+    padding: 0.6rem;
+  }
+
   .header-title {
     font-size: 1.1rem;
   }
+
+  .bar-id-info {
+    font-size: 0.65rem;
+  }
   
   .nav-button {
-    font-size: 0.85rem;
-    padding: 0.7rem;
+    font-size: 0.8rem;
+    padding: 0.6rem 0.4rem;
+    gap: 0.3rem;
   }
   
   .nav-button i {
-    font-size: 1rem;
+    font-size: 0.95rem;
   }
   
   .nav-text {
-    display: none;
+    font-size: 0.75rem;
   }
   
   .btn-volver {
     font-size: 0.9rem;
-    padding: 0.6rem 1rem;
+    padding: 0.6rem;
   }
   
   .btn-text {
-    display: none;
+    font-size: 0.85rem;
   }
   
   .section-title {
     font-size: 1.1rem;
     padding: 0.8rem;
-    flex-direction: column;
-    gap: 0.5rem;
   }
   
   .summary-card {
-    flex-direction: column;
-    text-align: center;
     padding: 1rem;
+    gap: 1rem;
   }
   
   .summary-icon {
@@ -868,9 +1184,13 @@ export default {
   .summary-value {
     font-size: 1.3rem;
   }
+
+  .summary-label {
+    font-size: 0.8rem;
+  }
   
   .data-table {
-    min-width: 600px;
+    min-width: 450px;
     font-size: 0.85rem;
   }
   
@@ -885,13 +1205,63 @@ export default {
   }
   
   .estado-badge {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     padding: 0.3rem 0.6rem;
   }
-  
-  .btn-action {
-    padding: 0.5rem 0.8rem;
+
+  .name-text {
+    font-size: 0.9rem;
+  }
+
+  .subtitle-text {
+    font-size: 0.75rem;
+  }
+
+  .info-item {
+    padding: 0.35rem 0.5rem;
+    gap: 0.4rem;
+  }
+
+  .info-label {
     font-size: 0.85rem;
+  }
+
+  .info-value {
+    font-size: 0.8rem;
+  }
+
+  .search-input {
+    font-size: 0.85rem;
+    padding: 0.8rem 2.8rem 0.8rem 2.8rem;
+  }
+
+  .search-icon {
+    font-size: 0.9rem;
+    left: 0.9rem;
+  }
+
+  .clear-btn {
+    width: 26px;
+    height: 26px;
+    right: 0.9rem;
+    font-size: 0.85rem;
+  }
+
+  .no-data {
+    font-size: 1rem;
+    padding: 2rem 1rem;
+  }
+
+  .content {
+    padding: 1rem 0.5rem;
+  }
+
+  .modal-close {
+    width: 35px;
+    height: 35px;
+    font-size: 1.2rem;
+    top: -8px;
+    right: -8px;
   }
 }
 </style>

@@ -3,26 +3,29 @@
     <!-- Header -->
     <header class="header">
       <h1 class="app-title">Gestión de Dueños</h1>
-      <button @click="logout" class="btn-logout">Salir</button>
+      
+      <div class="header-actions">
+        <!-- Search Bar en Header -->
+        <div class="search-container-header">
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Buscar por nombre o correo..."
+            class="search-input"
+          />
+        </div>
+
+        <!-- Botón Crear Dueño en Header -->
+        <button @click="openCreateModal" class="btn-create-header">
+          + Crear Dueño
+        </button>
+
+        <button @click="logout" class="btn-logout">Salir</button>
+      </div>
     </header>
 
     <!-- Main Content -->
     <main class="main-content">
-      <!-- Crear Dueño Button -->
-      <button @click="openCreateModal" class="btn-create">
-        + Crear Dueño
-      </button>
-
-      <!-- Search Bar -->
-      <div class="search-container">
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Buscar por nombre o correo..."
-          class="search-input"
-        />
-      </div>
-
       <!-- Cards Grid -->
       <div class="cards-grid">
         <div
@@ -58,6 +61,7 @@
             </p>
           </div>
           <div class="card-actions">
+            <button @click="openBaresModal(dueno)" class="btn-enter">Entrar</button>
             <button @click="openEditModal(dueno)" class="btn-edit">Editar</button>
             <button @click="confirmDelete(dueno)" class="btn-delete">Eliminar</button>
           </div>
@@ -92,7 +96,6 @@
             <input v-model="newDueno.contraseña" type="password" required />
           </div>
 
-          <!-- CAMPO CANTIDAD BARES BIEN ENVUELTO -->
           <div class="form-group">
             <label>Cantidad de Bares (inicial)</label>
             <input
@@ -137,18 +140,17 @@
             <input v-model="editingDueno.correo" type="email" required />
           </div>
 
-          <!-- CAMPO BARES DESHABILITADO BIEN ENVUELTO -->
           <div class="form-group">
-      <label>Cantidad de Bares (puedes modificar manualmente)</label>
-  <input
-    v-model.number="editingDueno.cantidad_bares"
-    type="number"
-    min="0"
-    class="input-editable"
-  />
-  <small style="color: #28a745; margin-top: 5px; display: block; font-weight: 600;">
-    Puedes cambiarlo aquí o dejar que se actualice automáticamente con los bares reales
-  </small>
+            <label>Cantidad de Bares (puedes modificar manualmente)</label>
+            <input
+              v-model.number="editingDueno.cantidad_bares"
+              type="number"
+              min="0"
+              class="input-editable"
+            />
+            <small style="color: #00ff7f; margin-top: 5px; display: block; font-weight: 600;">
+              Puedes cambiarlo aquí o dejar que se actualice automáticamente con los bares reales
+            </small>
           </div>
 
           <div class="form-group">
@@ -181,8 +183,47 @@
         </form>
       </div>
     </div>
+
+    <!-- Modal de Locales del Dueño -->
+    <div v-if="showBaresModal" class="modal-overlay" @click.self="closeBaresModal">
+      <div class="modal-content modal-bares" @click.stop>
+        <h2>Locales de {{ selectedDueno?.nombre }}</h2>
+
+        <div v-if="isLoadingBares" class="loading">
+          Cargando locales...
+        </div>
+
+        <div v-else-if="baresDelDueno.length === 0" class="no-results">
+          Este dueño aún no tiene locales registrados
+        </div>
+
+        <div v-else class="bares-list">
+          <div v-for="bar in baresDelDueno" :key="bar.id" class="bar-item">
+            <div class="bar-image">
+              <img :src="bar.imagen || 'https://via.placeholder.com/100'" :alt="bar.nombre" />
+            </div>
+            <div class="bar-info">
+              <h4>{{ bar.nombre }}</h4>
+              <p><strong>ID:</strong> {{ bar.id }}</p>
+              <p><strong>Ubicación:</strong> {{ bar.ubicacion }}</p>
+              <p><strong>Tipo:</strong> {{ bar.tipo === 'burdel' ? 'Burdel' : 'Bar' }}</p>
+            </div>
+            <div class="bar-action">
+              <button @click="entrarAlLocal(bar.id)" class="btn-enter-small">
+                Entrar
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button @click="closeBaresModal" class="btn-cancel">Cerrar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
+
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
@@ -195,7 +236,7 @@ import Swal from 'sweetalert2'
 const router = useRouter()
 const gestorStore = useGestorPrincipalStore()
 
-// Datos reactivos
+// Datos reactivos generales
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const isLoading = ref(false)
@@ -212,6 +253,12 @@ const newDueno = ref({
 })
 const editingDueno = ref(null)
 
+// Variables para el modal de bares
+const showBaresModal = ref(false)
+const selectedDueno = ref(null)
+const baresDelDueno = ref([])
+const isLoadingBares = ref(false)
+
 // Filtros
 const filteredDuenos = computed(() => {
   if (!searchQuery.value) return duenos.value
@@ -222,6 +269,8 @@ const filteredDuenos = computed(() => {
     d.telefono.includes(query)
   )
 })
+
+// Métodos existentes
 const confirmDelete = (dueno) => {
   Swal.fire({
     title: `¿Eliminar a ${dueno.nombre}?`,
@@ -242,7 +291,7 @@ const confirmDelete = (dueno) => {
 const deleteDueno = async (id) => {
   try {
     await axios.delete(`${API_BASE_URL}/duenos/${id}`)
-    await fetchDuenos() // recargar lista
+    await fetchDuenos()
     Swal.fire({
       title: '¡Eliminado!',
       text: 'El dueño ha sido eliminado correctamente',
@@ -260,12 +309,11 @@ const deleteDueno = async (id) => {
     )
   }
 }
-// Cargar dueños al iniciar
+
 onMounted(async () => {
   await fetchDuenos()
 })
 
-// Métodos
 const fetchDuenos = async () => {
   try {
     const response = await axios.get(`${API_BASE_URL}/duenos`)
@@ -283,7 +331,7 @@ const openCreateModal = () => {
     telefono: '', 
     correo: '', 
     contraseña: '', 
-    cantidad_bares: 0,  // ✅ Valor por defecto explícito
+    cantidad_bares: 0,
     estado: 'activo' 
   }
 }
@@ -298,13 +346,10 @@ const createDueno = async () => {
   errorMessage.value = ''
 
   try {
-    // ✅ Asegúrate de que cantidad_bares sea un número
     const payload = {
       ...newDueno.value,
       cantidad_bares: Number(newDueno.value.cantidad_bares) || 0
     }
-    
-    console.log('📤 Enviando:', payload)  // DEBUG
     
     await axios.post(`${API_BASE_URL}/duenos`, payload)
     await fetchDuenos()
@@ -319,6 +364,7 @@ const createDueno = async () => {
     isLoading.value = false
   }
 }
+
 const openEditModal = (dueno) => {
   editingDueno.value = { ...dueno }
   showEditModal.value = true
@@ -351,8 +397,37 @@ const updateDueno = async () => {
   }
 }
 
+// FUNCIONES PARA MODAL DE BARES
+const openBaresModal = async (dueno) => {
+  selectedDueno.value = dueno
+  showBaresModal.value = true
+  isLoadingBares.value = true
+  baresDelDueno.value = []
 
-// LOGOUT SEGURO DEL GESTOR PRINCIPAL (DIEGO)
+  try {
+    const response = await axios.get(`${API_BASE_URL}/bares/dueno/${dueno.id}`)
+    baresDelDueno.value = response.data.bares || []
+  } catch (error) {
+    console.error('Error cargando bares:', error)
+    Swal.fire('Error', 'No se pudieron cargar los locales de este dueño', 'error')
+    baresDelDueno.value = []
+  } finally {
+    isLoadingBares.value = false
+  }
+}
+
+const closeBaresModal = () => {
+  showBaresModal.value = false
+  selectedDueno.value = null
+  baresDelDueno.value = []
+}
+
+const entrarAlLocal = (barId) => {
+  closeBaresModal()
+  router.push(`/info_locales/${barId}`)
+}
+
+// LOGOUT
 const logout = () => {
   Swal.fire({
     title: '¿Cerrar sesión?',
@@ -365,10 +440,8 @@ const logout = () => {
     cancelButtonText: 'Cancelar'
   }).then((result) => {
     if (result.isConfirmed) {
-      // Borra TODO: gestor principal, dueños, etc.
       gestorStore.logout()
       localStorage.clear()
-
       Swal.fire('¡Sesión cerrada!', '', 'success').then(() => {
         router.push('/login_gestor_principal_diego')
       })
@@ -383,433 +456,1493 @@ const logout = () => {
   padding: 0;
   box-sizing: border-box;
 }
-.bares-count {
-  background: linear-gradient(45deg, #667eea, #764ba2);
-  color: white;
-  padding: 0.4rem 0.8rem;
-  border-radius: 20px;
-  font-weight: 700;
-  font-size: 1rem;
-  display: inline-block;
-  min-width: 40px;
-  text-align: center;
-}
-.app-container {
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
 
-/* Header */
-.header {
-  background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-  color: white;
-  padding: 1.5rem 2rem;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.app-title {
-  font-size: 2rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-.btn-logout {
-  background: white;
-  color: #1e3c72;
-  border: none;
-  padding: 0.6rem 1.5rem;
-  border-radius: 5px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-logout:hover {
-  background: #f0f0f0;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-}
-
-/* Main Content */
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
-}
-
-.btn-create {
-  background: #2a5298;
-  color: white;
-  border: none;
-  padding: 1rem 2rem;
-  border-radius: 8px;
-  font-size: 1.1rem;
-  font-weight: 600;
-  cursor: pointer;
-  margin-bottom: 2rem;
-  transition: all 0.3s ease;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.btn-create:hover {
-  background: #1e3c72;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
-}
-
-/* Search */
-.search-container {
-  margin-bottom: 2rem;
-}
-
-.search-input {
-  width: 100%;
-  padding: 1rem;
-  border: 2px solid #ddd;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: all 0.3s ease;
-}
-
-.search-input:focus {
-  outline: none;
-  border-color: #2a5298;
-  box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.1);
-}
-
-/* Cards Grid */
-.cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 2rem;
-}
-
-.admin-card {
-  background: white;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  transition: all 0.3s ease;
-}
-
-.admin-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
-}
-
-.card-image {
-  width: 100%;
-  height: 200px;
-  overflow: hidden;
-  background: #f0f0f0;
-}
-
-.card-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.card-content {
-  padding: 1.5rem;
-}
-
-.card-content h3 {
-  color: #1e3c72;
-  margin-bottom: 1rem;
-  font-size: 1.3rem;
-}
-
-.card-content p {
-  margin-bottom: 0.5rem;
-  color: #333;
-  font-size: 0.95rem;
-}
-
-.status-badge {
-  display: inline-block;
-  padding: 0.3rem 0.8rem;
-  border-radius: 20px;
-  font-weight: 600;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-}
-
-.status-active {
-  background: #d4edda;
-  color: #155724;
-}
-
-.status-inactive {
-  background: #f8d7da;
-  color: #721c24;
-}
-
-.card-actions {
-  display: flex;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  background: #f8f9fa;
-}
-
-.btn-enter,
-.btn-edit {
-  flex: 1;
-  padding: 0.7rem;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.btn-enter {
-  background: #2a5298;
-  color: white;
-}
-
-.btn-enter:hover {
-  background: #1e3c72;
-}
-
-.btn-edit {
-  background: white;
-  color: #2a5298;
-  border: 2px solid #2a5298;
-}
-
-.btn-edit:hover {
-  background: #2a5298;
-  color: white;
-}
-
+/* ========== SIN RESULTADOS ========== */
 .no-results {
   text-align: center;
-  padding: 3rem;
-  color: #666;
-  font-size: 1.2rem;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.3rem;
+  font-weight: 500;
 }
 
-/* Modal */
+/* ========== MODAL OVERLAY ========== */
 .modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   justify-content: center;
   align-items: center;
   z-index: 1000;
-  backdrop-filter: blur(3px);
+  backdrop-filter: blur(8px);
+  animation: fadeInOverlay 0.3s ease-out;
 }
 
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ========== MODAL CONTENIDO ========== */
 .modal-content {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  border-radius: 20px;
+  padding: 2.5rem;
   width: 90%;
-  max-width: 500px;
+  max-width: 550px;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 20, 147, 0.3);
+  border: 2px solid rgba(255, 20, 147, 0.2);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .modal-content h2 {
-  color: #1e3c72;
-  margin-bottom: 1.5rem;
-  font-size: 1.5rem;
+  color: #ffffff;
+  margin-bottom: 2rem;
+  font-size: 1.8rem;
+  text-align: center;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ff1493, #00bfff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
+/* ========== SCROLLBAR PERSONALIZADO ========== */
+.modal-content::-webkit-scrollbar,
+.bares-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track,
+.bares-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+}
+
+.modal-content::-webkit-scrollbar-thumb,
+.bares-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ff1493, #00bfff);
+  border-radius: 10px;
+}
+
+/* ========== FORM GROUP ========== */
 .form-group {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.8rem;
 }
 
 .form-group label {
   display: block;
-  margin-bottom: 0.5rem;
-  color: #333;
+  margin-bottom: 0.7rem;
+  color: #00bfff;
   font-weight: 600;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .form-group input {
   width: 100%;
-  padding: 0.8rem;
-  border: 2px solid #ddd;
-  border-radius: 6px;
+  padding: 1rem 1.2rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
   font-size: 1rem;
+  color: white;
   transition: all 0.3s ease;
+}
+
+.form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #2a5298;
-  box-shadow: 0 0 0 3px rgba(42, 82, 152, 0.1);
+  border-color: #ff1493;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 20, 147, 0.2), 0 0 20px rgba(255, 20, 147, 0.2);
 }
 
-.input-disabled {
-  background: #f0f0f0;
-  cursor: not-allowed;
-}
-
-.error-message {
-  background: #f8d7da;
-  color: #721c24;
-  padding: 0.8rem;
-  border-radius: 6px;
-  margin-bottom: 1rem;
-  font-weight: 500;
-}
-
-/* Toggle Button */
-.toggle-container {
+.form-group small {
+  color: #00ff7f;
   margin-top: 0.5rem;
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.input-editable {
+  border: 2px solid #00ff7f !important;
+  background: rgba(0, 255, 127, 0.1) !important;
+}
+
+.input-editable:focus {
+  border-color: #00ff7f !important;
+  box-shadow: 0 0 0 3px rgba(0, 255, 127, 0.2) !important;
+}
+
+/* ========== ERROR MESSAGE ========== */
+.error-message {
+  background: linear-gradient(135deg, rgba(255, 20, 147, 0.2), rgba(255, 20, 147, 0.1));
+  color: #ff69b4;
+  padding: 1rem 1.2rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  border: 2px solid rgba(255, 20, 147, 0.4);
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.2);
+}
+
+/* ========== TOGGLE BUTTON ========== */
+.toggle-container {
+  margin-top: 0.8rem;
 }
 
 .toggle-button {
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 200px;
-  height: 50px;
-  border-radius: 25px;
-  border: none;
+  width: 220px;
+  height: 55px;
+  border-radius: 30px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
-  transition: all 0.3s ease;
-  font-weight: 600;
-  font-size: 1rem;
-  padding: 0 1rem;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 0 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .toggle-active {
-  background: #28a745;
-  color: white;
+  background: linear-gradient(135deg, #00ff7f, #00cc66);
+  color: #000;
   justify-content: flex-end;
+  box-shadow: 0 6px 20px rgba(0, 255, 127, 0.5);
 }
 
 .toggle-inactive {
-  background: #dc3545;
+  background: linear-gradient(135deg, #ff1493, #dc143c);
   color: white;
   justify-content: flex-start;
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
 }
 
 .toggle-slider {
   position: absolute;
-  width: 40px;
-  height: 40px;
+  width: 45px;
+  height: 45px;
   background: white;
   border-radius: 50%;
-  transition: all 0.3s ease;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   left: 5px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
 }
 
 .toggle-active .toggle-slider {
-  left: calc(100% - 45px);
+  left: calc(100% - 50px);
 }
 
 .toggle-label {
   z-index: 1;
+  font-weight: 800;
 }
 
-/* Modal Actions */
+/* ========== ACCIONES DE MODAL ========== */
 .modal-actions {
   display: flex;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 2.5rem;
 }
 
 .btn-cancel,
 .btn-submit {
   flex: 1;
-  padding: 0.8rem;
+  padding: 1rem 1.5rem;
   border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  font-weight: 600;
+  border-radius: 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .btn-cancel {
-  background: #6c757d;
+  background: rgba(255, 255, 255, 0.1);
   color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
 }
 
 .btn-cancel:hover {
-  background: #5a6268;
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
 }
 
 .btn-submit {
-  background: #2a5298;
+  background: linear-gradient(135deg, #ff1493, #ff69b4);
   color: white;
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
 }
 
 .btn-submit:hover {
-  background: #1e3c72;
+  background: linear-gradient(135deg, #ff69b4, #ff1493);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(255, 20, 147, 0.7);
 }
 
 .btn-submit:disabled {
-  background: #ccc;
+  background: rgba(255, 255, 255, 0.2);
   cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
 }
 
-/* Responsive */
+/* ========== MODAL DE BARES ========== */
+.modal-bares {
+  max-width: 850px;
+  max-height: 88vh;
+  width: 92%;
+}
+
+.modal-bares h2 {
+  font-size: 2rem;
+  margin-bottom: 2rem;
+}
+
+.bares-list {
+  overflow-y: auto;
+  max-height: 58vh;
+  padding-right: 12px;
+}
+
+.bar-item {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(26, 26, 46, 0.8), rgba(15, 52, 96, 0.6));
+  border-radius: 16px;
+  padding: 1.3rem;
+  margin-bottom: 1.2rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 20, 147, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.bar-item:hover {
+  transform: translateX(8px);
+  box-shadow: 0 10px 30px rgba(255, 20, 147, 0.4);
+  border-color: rgba(255, 20, 147, 0.5);
+}
+
+.bar-image {
+  flex-shrink: 0;
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-right: 1.5rem;
+  background: linear-gradient(135deg, #1a1a2e, #0f3460);
+  border: 2px solid rgba(255, 20, 147, 0.3);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.bar-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.bar-item:hover .bar-image img {
+  transform: scale(1.1);
+}
+
+.bar-info {
+  flex: 1;
+}
+
+.bar-info h4 {
+  margin: 0 0 0.8rem 0;
+  color: #ff1493;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.bar-info p {
+  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+}
+
+.bar-info strong {
+  color: #00bfff;
+  font-weight: 600;
+}
+
+.bar-action {
+  margin-left: 1.2rem;
+}
+
+.btn-enter-small {
+  background: linear-gradient(135deg, #00bfff, #0080ff);
+  color: white;
+  border: none;
+  padding: 0.9rem 1.8rem;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 15px rgba(0, 191, 255, 0.4);
+}
+
+.btn-enter-small:hover {
+  background: linear-gradient(135deg, #0080ff, #00bfff);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 191, 255, 0.6);
+}
+
+/* ========== LOADING ========== */
+.loading {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.2rem;
+  font-weight: 500;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* ========== RESPONSIVE DESIGN ========== */
+@media (max-width: 1200px) {
+  .header {
+    padding: 1.3rem 2rem;
+  }
+  
+  .search-container-header {
+    max-width: 300px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+  
+  .header {
+    flex-wrap: wrap;
+    gap: 1.5rem;
+  }
+  
+  .app-title {
+    font-size: 1.8rem;
+  }
+  
+  .header-actions {
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 1rem;
+  }
+  
+  .search-container-header {
+    max-width: 100%;
+    flex: 1 1 100%;
+    order: 3;
+  }
+}
+
 @media (max-width: 768px) {
   .header {
     flex-direction: column;
-    gap: 1rem;
+    gap: 1.2rem;
     text-align: center;
+    padding: 1.5rem;
+  }
+
+  .app-title {
+    font-size: 1.6rem;
+    width: 100%;
+  }
+
+  .header-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 1rem;
+  }
+  
+  .search-container-header {
+    max-width: 100%;
+  }
+
+  .btn-create-header,
+  .btn-logout {
+    width: 100%;
+    padding: 1rem 1.5rem;
+  }
+
+  .main-content {
+    padding: 2rem 1.2rem;
+  }
+
+  .cards-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .card-actions {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .card-actions button {
+    width: 100%;
+  }
+
+  .modal-content {
+    width: 95%;
+    padding: 2rem 1.5rem;
+    max-height: 95vh;
+  }
+
+  .modal-content h2 {
+    font-size: 1.5rem;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .btn-cancel,
+  .btn-submit {
+    width: 100%;
+  }
+
+  .modal-bares {
+    width: 95%;
+    max-height: 92vh;
+  }
+
+  .bares-list {
+    max-height: 55vh;
+  }
+
+  .bar-item {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem;
+  }
+
+  .bar-image {
+    margin-right: 0;
+    margin-bottom: 1.2rem;
+    width: 120px;
+    height: 120px;
+  }
+
+  .bar-action {
+    margin-left: 0;
+    margin-top: 1.2rem;
+    width: 100%;
+  }
+
+  .btn-enter-small {
+    width: 100%;
+  }
+
+  .toggle-button {
+    width: 100%;
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 1.2rem 1rem;
+  }
+
+  .app-title {
+    font-size: 1.4rem;
+  }
+
+  .main-content {
+    padding: 1.5rem 1rem;
+  }
+
+  .btn-create-header,
+  .btn-logout {
+    font-size: 0.9rem;
+    padding: 0.9rem 1.3rem;
+  }
+
+  .search-input {
+    padding: 0.85rem 1.2rem;
+    font-size: 0.9rem;
+  }
+
+  .card-content {
+    padding: 1.5rem;
+  }
+
+  .card-content h3 {
+    font-size: 1.3rem;
+  }
+
+  .modal-content {
+    padding: 1.8rem 1.2rem;
+  }
+
+  .modal-content h2 {
+    font-size: 1.3rem;
+  }
+
+  .form-group input {
+    padding: 0.9rem 1rem;
+    font-size: 0.95rem;
+  }
+}
+.app-container {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #16213e 100%);
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: #ffffff;
+}
+
+/* ========== HEADER STICKY ========== */
+.header {
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  padding: 1.5rem 2.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 4px 20px rgba(255, 20, 147, 0.3);
+  border-bottom: 2px solid rgba(255, 20, 147, 0.2);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  gap: 2rem;
+}
+
+.app-title {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ff1493, #00bfff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 30px rgba(255, 20, 147, 0.5);
+  white-space: nowrap;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* ========== SEARCH EN HEADER ========== */
+.search-container-header {
+  flex: 1;
+  max-width: 400px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.9rem 1.5rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 20, 147, 0.3);
+  border-radius: 25px;
+  font-size: 0.95rem;
+  color: white;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.search-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #ff1493;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 4px rgba(255, 20, 147, 0.2), 0 0 20px rgba(255, 20, 147, 0.3);
+  transform: translateY(-2px);
+}
+
+/* ========== BOTÓN CREAR EN HEADER ========== */
+.btn-create-header {
+  background: linear-gradient(135deg, #00bfff, #0080ff);
+  color: white;
+  border: none;
+  padding: 0.9rem 1.8rem;
+  border-radius: 25px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(0, 191, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.btn-create-header:hover {
+  background: linear-gradient(135deg, #0080ff, #00bfff);
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(0, 191, 255, 0.7);
+}
+
+.btn-create-header:active {
+  transform: translateY(-1px) scale(1.02);
+}
+
+/* ========== BOTÓN LOGOUT ========== */
+.btn-logout {
+  background: linear-gradient(135deg, #ff1493, #ff69b4);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  padding: 0.9rem 1.8rem;
+  border-radius: 25px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  box-shadow: 0 4px 15px rgba(255, 20, 147, 0.4);
+  white-space: nowrap;
+}
+
+.btn-logout:hover {
+  background: linear-gradient(135deg, #ff69b4, #ff1493);
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.6);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* ========== CONTENIDO PRINCIPAL ========== */
+.main-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 2.5rem 2rem;
+}
+
+/* ========== GRID DE CARDS ========== */
+.cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 2rem;
+  animation: fadeIn 0.6s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ========== CARD DE DUEÑO ========== */
+.admin-card {
+  background: linear-gradient(135deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 52, 96, 0.9) 100%);
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 20, 147, 0.2);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  position: relative;
+}
+
+.admin-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #ff1493, #00bfff, #ff1493);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.admin-card:hover::before {
+  opacity: 1;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.admin-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 15px 40px rgba(255, 20, 147, 0.4), 0 0 0 1px rgba(255, 20, 147, 0.4);
+}
+
+.card-image {
+  width: 100%;
+  height: 220px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #1a1a2e, #0f3460);
+  position: relative;
+}
+
+.card-image::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.5) 100%);
+  pointer-events: none;
+}
+
+.card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.admin-card:hover .card-image img {
+  transform: scale(1.1);
+}
+
+.card-content {
+  padding: 1.8rem;
+}
+
+.card-content h3 {
+  color: #ffffff;
+  margin-bottom: 1.2rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #ff1493, #ff69b4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.card-content p {
+  margin-bottom: 0.8rem;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.card-content strong {
+  color: #00bfff;
+  font-weight: 600;
+}
+
+/* ========== CONTADOR DE BARES ========== */
+.bares-count {
+  background: linear-gradient(135deg, #ff1493, #ff69b4);
+  color: white;
+  padding: 0.5rem 1rem;
+  border-radius: 25px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  display: inline-block;
+  min-width: 45px;
+  text-align: center;
+  box-shadow: 0 4px 15px rgba(255, 20, 147, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* ========== BADGES DE ESTADO ========== */
+.status-badge {
+  display: inline-block;
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border: 2px solid;
+}
+
+.status-active {
+  background: linear-gradient(135deg, rgba(0, 255, 127, 0.2), rgba(0, 255, 127, 0.1));
+  color: #00ff7f;
+  border-color: #00ff7f;
+  box-shadow: 0 0 15px rgba(0, 255, 127, 0.3);
+}
+
+.status-inactive {
+  background: linear-gradient(135deg, rgba(255, 20, 147, 0.2), rgba(255, 20, 147, 0.1));
+  color: #ff1493;
+  border-color: #ff1493;
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.3);
+}
+
+/* ========== ACCIONES DE CARD ========== */
+.card-actions {
+  display: flex;
+  gap: 0.8rem;
+  padding: 1.2rem 1.8rem;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.card-actions button {
+  flex: 1;
+  padding: 0.9rem 1rem;
+  border: none;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-enter {
+  background: linear-gradient(135deg, #00ff7f, #00cc66);
+  color: #000;
+  box-shadow: 0 4px 15px rgba(0, 255, 127, 0.4);
+}
+
+.btn-enter:hover {
+  background: linear-gradient(135deg, #00cc66, #00ff7f);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 255, 127, 0.6);
+}
+
+.btn-edit {
+  background: rgba(0, 191, 255, 0.15);
+  color: #00bfff;
+  border: 2px solid #00bfff;
+  box-shadow: 0 4px 15px rgba(0, 191, 255, 0.3);
+}
+
+.btn-edit:hover {
+  background: linear-gradient(135deg, #00bfff, #0080ff);
+  color: white;
+  border-color: transparent;
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(0, 191, 255, 0.6);
+}
+
+.btn-delete {
+  background: linear-gradient(135deg, #ff1493, #dc143c);
+  color: white;
+  box-shadow: 0 4px 15px rgba(255, 20, 147, 0.4);
+}
+
+.btn-delete:hover {
+  background: linear-gradient(135deg, #dc143c, #ff1493);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.6);
+}
+
+/* ========
+.btn-delete:hover {
+  background: linear-gradient(135deg, #dc143c, #ff1493);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.6);
+}
+
+/* ========== SIN RESULTADOS ========== */
+.no-results {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.3rem;
+  font-weight: 500;
+}
+
+/* ========== MODAL OVERLAY ========== */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  animation: fadeInOverlay 0.3s ease-out;
+}
+
+@keyframes fadeInOverlay {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ========== MODAL CONTENIDO ========== */
+.modal-content {
+  background: linear-gradient(135deg, #1a1a2e 0%, #0f3460 100%);
+  border-radius: 20px;
+  padding: 2.5rem;
+  width: 90%;
+  max-width: 550px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 20, 147, 0.3);
+  border: 2px solid rgba(255, 20, 147, 0.2);
+  animation: slideUp 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(50px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.modal-content h2 {
+  color: #ffffff;
+  margin-bottom: 2rem;
+  font-size: 1.8rem;
+  text-align: center;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ff1493, #00bfff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ========== SCROLLBAR PERSONALIZADO ========== */
+.modal-content::-webkit-scrollbar,
+.bares-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track,
+.bares-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 10px;
+}
+
+.modal-content::-webkit-scrollbar-thumb,
+.bares-list::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ff1493, #00bfff);
+  border-radius: 10px;
+}
+
+/* ========== FORM GROUP ========== */
+.form-group {
+  margin-bottom: 1.8rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.7rem;
+  color: #ffffff;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #00bfff;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 1rem 1.2rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  font-size: 1rem;
+  color: white;
+  transition: all 0.3s ease;
+}
+
+.form-group input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: #ff1493;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 20, 147, 0.2), 0 0 20px rgba(255, 20, 147, 0.2);
+}
+
+.form-group small {
+  color: #00ff7f;
+  margin-top: 0.5rem;
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.input-editable {
+  border: 2px solid #00ff7f !important;
+  background: rgba(0, 255, 127, 0.1) !important;
+}
+
+.input-editable:focus {
+  border-color: #00ff7f !important;
+  box-shadow: 0 0 0 3px rgba(0, 255, 127, 0.2) !important;
+}
+
+/* ========== ERROR MESSAGE ========== */
+.error-message {
+  background: linear-gradient(135deg, rgba(255, 20, 147, 0.2), rgba(255, 20, 147, 0.1));
+  color: #ff69b4;
+  padding: 1rem 1.2rem;
+  border-radius: 12px;
+  margin-bottom: 1.5rem;
+  font-weight: 600;
+  border: 2px solid rgba(255, 20, 147, 0.4);
+  box-shadow: 0 0 15px rgba(255, 20, 147, 0.2);
+}
+
+/* ========== TOGGLE BUTTON ========== */
+.toggle-container {
+  margin-top: 0.8rem;
+}
+
+.toggle-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 220px;
+  height: 55px;
+  border-radius: 30px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  font-weight: 700;
+  font-size: 1.05rem;
+  padding: 0 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.toggle-active {
+  background: linear-gradient(135deg, #00ff7f, #00cc66);
+  color: #000;
+  justify-content: flex-end;
+  box-shadow: 0 6px 20px rgba(0, 255, 127, 0.5);
+}
+
+.toggle-inactive {
+  background: linear-gradient(135deg, #ff1493, #dc143c);
+  color: white;
+  justify-content: flex-start;
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
+}
+
+.toggle-slider {
+  position: absolute;
+  width: 45px;
+  height: 45px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  left: 5px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.toggle-active .toggle-slider {
+  left: calc(100% - 50px);
+}
+
+.toggle-label {
+  z-index: 1;
+  font-weight: 800;
+}
+
+/* ========== ACCIONES DE MODAL ========== */
+.modal-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2.5rem;
+}
+
+.btn-cancel,
+.btn-submit {
+  flex: 1;
+  padding: 1rem 1.5rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.btn-cancel {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-cancel:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.btn-submit {
+  background: linear-gradient(135deg, #ff1493, #ff69b4);
+  color: white;
+  box-shadow: 0 6px 20px rgba(255, 20, 147, 0.5);
+}
+
+.btn-submit:hover {
+  background: linear-gradient(135deg, #ff69b4, #ff1493);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(255, 20, 147, 0.7);
+}
+
+.btn-submit:disabled {
+  background: rgba(255, 255, 255, 0.2);
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ========== MODAL DE BARES ========== */
+.modal-bares {
+  max-width: 850px;
+  max-height: 88vh;
+  width: 92%;
+}
+
+.modal-bares h2 {
+  font-size: 2rem;
+  margin-bottom: 2rem;
+}
+
+.bares-list {
+  overflow-y: auto;
+  max-height: 58vh;
+  padding-right: 12px;
+}
+
+.bar-item {
+  display: flex;
+  align-items: center;
+  background: linear-gradient(135deg, rgba(26, 26, 46, 0.8), rgba(15, 52, 96, 0.6));
+  border-radius: 16px;
+  padding: 1.3rem;
+  margin-bottom: 1.2rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid rgba(255, 20, 147, 0.2);
+  backdrop-filter: blur(10px);
+}
+
+.bar-item:hover {
+  transform: translateX(8px);
+  box-shadow: 0 10px 30px rgba(255, 20, 147, 0.4);
+  border-color: rgba(255, 20, 147, 0.5);
+}
+
+.bar-image {
+  flex-shrink: 0;
+  width: 100px;
+  height: 100px;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-right: 1.5rem;
+  background: linear-gradient(135deg, #1a1a2e, #0f3460);
+  border: 2px solid rgba(255, 20, 147, 0.3);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+}
+
+.bar-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.bar-item:hover .bar-image img {
+  transform: scale(1.1);
+}
+
+.bar-info {
+  flex: 1;
+}
+
+.bar-info h4 {
+  margin: 0 0 0.8rem 0;
+  color: #ff1493;
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+
+.bar-info p {
+  margin: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.95rem;
+}
+
+.bar-info strong {
+  color: #00bfff;
+  font-weight: 600;
+}
+
+.bar-action {
+  margin-left: 1.2rem;
+}
+
+.btn-enter-small {
+  background: linear-gradient(135deg, #00bfff, #0080ff);
+  color: white;
+  border: none;
+  padding: 0.9rem 1.8rem;
+  border-radius: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 15px rgba(0, 191, 255, 0.4);
+}
+
+.btn-enter-small:hover {
+  background: linear-gradient(135deg, #0080ff, #00bfff);
+  transform: scale(1.08) translateY(-2px);
+  box-shadow: 0 6px 20px rgba(0, 191, 255, 0.6);
+}
+
+/* ========== LOADING ========== */
+.loading {
+  text-align: center;
+  padding: 4rem 2rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+/* ========== RESPONSIVE DESIGN ========== */
+@media (max-width: 1024px) {
+  .cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .header {
+    flex-direction: column;
+    gap: 1.2rem;
+    text-align: center;
+    padding: 1.5rem 1.5rem;
+  }
+
+  .app-title {
+    font-size: 1.8rem;
+  }
+
+  .btn-logout {
+    width: 100%;
+    padding: 0.9rem 1.5rem;
+  }
+
+  .main-content {
+    padding: 2rem 1.2rem;
+  }
+
+  .btn-create {
+    width: 100%;
+    justify-content: center;
+    padding: 1.1rem 2rem;
+  }
+
+  .cards-grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .card-actions {
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .card-actions button {
+    width: 100%;
+  }
+
+  .modal-content {
+    width: 95%;
+    padding: 2rem 1.5rem;
+    max-height: 95vh;
+  }
+
+  .modal-content h2 {
+    font-size: 1.5rem;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .btn-cancel,
+  .btn-submit {
+    width: 100%;
+  }
+
+  .modal-bares {
+    width: 95%;
+    max-height: 92vh;
+  }
+
+  .bares-list {
+    max-height: 55vh;
+  }
+
+  .bar-item {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem;
+  }
+
+  .bar-image {
+    margin-right: 0;
+    margin-bottom: 1.2rem;
+    width: 120px;
+    height: 120px;
+  }
+
+  .bar-action {
+    margin-left: 0;
+    margin-top: 1.2rem;
+    width: 100%;
+  }
+
+  .btn-enter-small {
+    width: 100%;
+  }
+
+  .toggle-button {
+    width: 100%;
+    max-width: 220px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 1.2rem 1rem;
   }
 
   .app-title {
     font-size: 1.5rem;
   }
 
-  .cards-grid {
-    grid-template-columns: 1fr;
+  .main-content {
+    padding: 1.5rem 1rem;
+  }
+
+  .btn-create {
+    font-size: 1rem;
+    padding: 1rem 1.5rem;
+  }
+
+  .search-input {
+    padding: 1rem;
+    font-size: 0.95rem;
+  }
+
+  .card-content {
+    padding: 1.5rem;
+  }
+
+  .card-content h3 {
+    font-size: 1.3rem;
   }
 
   .modal-content {
-    width: 95%;
-    padding: 1.5rem;
+    padding: 1.8rem 1.2rem;
+  }
+
+  .modal-content h2 {
+    font-size: 1.3rem;
+  }
+
+  .form-group input {
+    padding: 0.9rem 1rem;
+    font-size: 0.95rem;
   }
 }
-.btn-delete {
-  flex: 1;
-  padding: 0.7rem;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  background: #dc3545;
-  color: white;
-  transition: all 0.3s ease;
+
+/* ========== ANIMACIONES ADICIONALES ========== */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
-.btn-delete:hover {
-  background: #c82333;
-  transform: translateY(-2px);
-}
-
-/* Ajuste para que quepan los dos botones */
-.card-actions {
-  display: flex;
-  gap: 0.5rem;
-  padding: 1rem 1.5rem;
-  background: #f8f9fa;
-}
-.input-editable {
-  border: 2px solid #28a745 !important;
-  background: #f8fff8 !important;
-}
-.input-editable:focus {
-  border-color: #1e7e34 !important;
-  box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.2) !important;
+.loading {
+  animation: pulse 2s ease-in-out infinite;
 }
 </style>

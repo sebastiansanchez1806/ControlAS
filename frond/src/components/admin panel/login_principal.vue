@@ -159,7 +159,10 @@ const email = ref('');
 const password = ref('');
 const passwordFieldType = ref('password');
 const isLoading = ref(false);
-
+const showBaresModal = ref(false)
+const selectedDueno = ref(null)          // Dueño seleccionado
+const baresDelDueno = ref([])            // Lista de bares de ese dueño
+const isLoadingBares = ref(false)
 // Variables para el modal de código
 const showCodeModal = ref(false);
 const codeDigits = ref(['', '', '', '', '', '']);
@@ -179,6 +182,35 @@ const isCodeComplete = computed(() => {
 const togglePasswordVisibility = () => {
   passwordFieldType.value = passwordFieldType.value === 'password' ? 'text' : 'password';
 };
+const openBaresModal = async (dueno) => {
+  selectedDueno.value = dueno
+  showBaresModal.value = true
+  isLoadingBares.value = true
+
+  try {
+    // Endpoint para obtener bares por dueño: GET /bares/dueno/{dueno_id}
+    const response = await axios.get(`${API_BASE_URL}/bares/dueno/${dueno.id}`)
+    baresDelDueno.value = response.data
+  } catch (error) {
+    console.error('Error cargando bares:', error)
+    Swal.fire('Error', 'No se pudieron cargar los locales de este dueño', 'error')
+    baresDelDueno.value = []
+  } finally {
+    isLoadingBares.value = false
+  }
+}
+
+const closeBaresModal = () => {
+  showBaresModal.value = false
+  selectedDueno.value = null
+  baresDelDueno.value = []
+}
+const entrarAlLocal = (barId) => {
+  // Cerramos el modal
+  closeBaresModal()
+  // Navegamos al componente info_locales con el bar_id
+  router.push({ path: `/info_locales/${barId}` })
+}
 
 const handleLogin = async () => {
   isLoading.value = true;
