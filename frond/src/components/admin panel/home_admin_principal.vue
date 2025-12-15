@@ -192,6 +192,8 @@
       </div>
     </transition>
 
+    <!-- Resto de modales (Crear, Editar, Bares...) se mantienen igual -->
+    <!-- ... (tu código original de modales sigue aquí sin cambios) ... -->
     <!-- Modal Crear Dueño -->
     <div v-if="showCreateModal" class="modal-overlay" @click.self="closeCreateModal">
       <div class="modal-content" @click.stop>
@@ -391,47 +393,17 @@ const currentGestorData = ref({
 })
 
 // Iconos SVG para configuración
-const UserIcon = () => h('svg', {
-  xmlns: 'http://www.w3.org/2000/svg',
-  width: 20,
-  height: 20,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round'
-}, [
+const UserIcon = () => h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, [
   h('path', { d: 'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2' }),
   h('circle', { cx: 12, cy: 7, r: 4 })
 ])
 
-const MailIcon = () => h('svg', {
-  xmlns: 'http://www.w3.org/2000/svg',
-  width: 20,
-  height: 20,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round'
-}, [
+const MailIcon = () => h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, [
   h('rect', { width: 20, height: 16, x: 2, y: 4, rx: 2 }),
   h('path', { d: 'm22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7' })
 ])
 
-const LockIcon = () => h('svg', {
-  xmlns: 'http://www.w3.org/2000/svg',
-  width: 20,
-  height: 20,
-  viewBox: '0 0 24 24',
-  fill: 'none',
-  stroke: 'currentColor',
-  strokeWidth: 2,
-  strokeLinecap: 'round',
-  strokeLinejoin: 'round'
-}, [
+const LockIcon = () => h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: 20, height: 20, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round' }, [
   h('rect', { width: 18, height: 11, x: 3, y: 11, rx: 2, ry: 2 }),
   h('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' })
 ])
@@ -461,7 +433,7 @@ onMounted(async () => {
 
 const loadGestorData = async () => {
   try {
-    const response = await axios.get('/api/gestor_principal')
+    const response = await axios.get(`${API_BASE_URL}/gestor_principal`)
     currentGestorData.value = {
       nombre: response.data.nombre,
       correo: response.data.correo
@@ -519,7 +491,7 @@ const getSettingsModalTitle = () => {
   return titles[activeSettingsModal.value] || ''
 }
 
-// === MÉTODO CLAVE CORREGIDO ===
+// === MÉTODO CLAVE TOTALMENTE CORREGIDO ===
 const handleSettingsSubmit = async () => {
   settingsError.value = ''
   settingsLoading.value = true
@@ -557,30 +529,34 @@ const handleSettingsSubmit = async () => {
     let response
 
     if (activeSettingsModal.value === 'password') {
-      // Cambio de contraseña → JSON body (como antes)
-      response = await axios.put('/api/gestor_principal/password', {
+      // Cambio de contraseña → JSON
+      response = await axios.put(`${API_BASE_URL}/gestor_principal/password`, {
         current_password: currentPassword.value,
         new_password: settingsNewValue.value
       })
     } else {
-      // Cambio de nombre o correo → FormData (obligatorio por Form(...) en backend)
+      // Cambio de nombre o correo → FormData + endpoint correcto
       const formData = new FormData()
+      
       if (activeSettingsModal.value === 'name') {
-        formData.append('nombre', settingsNewValue.value)
+        formData.append('nombre', settingsNewValue.value.trim())
       } else if (activeSettingsModal.value === 'email') {
-        formData.append('correo', settingsNewValue.value)
+        formData.append('correo', settingsNewValue.value.trim())
       }
+      
       formData.append('current_password', currentPassword.value)
 
-      response = await axios.put('/api/gestor_principal/update', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      response = await axios.put(`${API_BASE_URL}/gestor_principal/update`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       })
 
       // Actualizar vista local
       if (activeSettingsModal.value === 'name') {
-        currentGestorData.value.nombre = settingsNewValue.value
+        currentGestorData.value.nombre = settingsNewValue.value.trim()
       } else if (activeSettingsModal.value === 'email') {
-        currentGestorData.value.correo = settingsNewValue.value
+        currentGestorData.value.correo = settingsNewValue.value.trim()
       }
     }
 
@@ -609,7 +585,7 @@ const handleSettingsSubmit = async () => {
   }
 }
 
-// Métodos de dueños (sin cambios)
+// === Resto de métodos (sin cambios) ===
 const confirmDelete = (dueno) => {
   Swal.fire({
     title: `¿Eliminar a ${dueno.nombre}?`,
@@ -998,6 +974,7 @@ const logout = () => {
   z-index: 100;
   backdrop-filter: blur(8px);
   animation: fadeInOverlay 0.3s ease-out;
+  padding: 20px;
 }
 
 @keyframes fadeInOverlay {
@@ -1054,7 +1031,7 @@ const logout = () => {
   align-items: center;
   position: sticky;
   top: 0;
-  background: #fff;
+  background: #9f9f9f;
   z-index: 10;
   border-radius: 16px 16px 0 0;
 }
@@ -1088,7 +1065,7 @@ const logout = () => {
 }
 
 .modal-body {
-  padding: 20px;
+  padding: 24px 20px;
 }
 
 .modal-footer {
@@ -1123,7 +1100,7 @@ const logout = () => {
 
 /* ========== FORM GROUP ========== */
 .form-group {
-  margin-bottom: 1.8rem;
+  margin-bottom: 1.5rem;
 }
 
 .form-group label {
@@ -1697,6 +1674,7 @@ const logout = () => {
 }
 
 /* ========== BADGES DE ESTADO ========== */
+/* ========== BADGES DE ESTADO ========== */
 .status-badge {
   display: inline-block;
   padding: 0.4rem 1rem;
@@ -1881,10 +1859,16 @@ const logout = () => {
     width: 100%;
   }
 
+  .modal-overlay {
+    padding: 0;
+    align-items: center;
+  }
+
   .modal-content {
     width: 95%;
     padding: 2rem 1.5rem;
-    max-height: 95vh;
+    max-height: 85vh;
+    border-radius: 20px;
   }
 
   .modal-content h2 {
@@ -1903,7 +1887,7 @@ const logout = () => {
 
   .modal-bares {
     width: 95%;
-    max-height: 92vh;
+    max-height: 85vh;
   }
 
   .bares-list {
@@ -1938,25 +1922,45 @@ const logout = () => {
     max-width: 220px;
   }
 
-  /* Settings responsive */
+  /* Settings responsive mejorado */
   .modal-overlay {
-    padding: 0;
     align-items: flex-end;
   }
 
-  .options-modal,
-  .settings-modal {
+  .options-modal {
     border-radius: 24px 24px 0 0;
     max-width: 100%;
     width: 100%;
-    max-height: 90vh;
+    max-height: 75vh;
     border: none;
     border-top: 3px solid #000;
+    animation: slideUpMobile 0.3s ease;
+  }
+
+  @keyframes slideUpMobile {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+
+  .settings-modal {
+    border-radius: 20px;
+    max-width: 95%;
+    width: 95%;
+    max-height: 80vh;
+    border: 3px solid #000;
   }
 
   .modal-header {
     padding: 18px 16px;
     border-radius: 24px 24px 0 0;
+  }
+
+  .settings-modal .modal-header {
+    border-radius: 20px 20px 0 0;
   }
 
   .modal-header h3 {
@@ -1965,20 +1969,55 @@ const logout = () => {
 
   .options-body {
     padding: 16px;
-    gap: 12px;
+    gap: 10px;
+    max-height: calc(75vh - 80px);
+    overflow-y: auto;
   }
 
   .menu-option {
     padding: 16px 18px;
     font-size: 15px;
     gap: 12px;
-    min-height: 64px;
+    min-height: 60px;
+  }
+
+  .modal-body {
+    padding: 20px 16px;
+    max-height: calc(80vh - 160px);
+    overflow-y: auto;
+  }
+
+  .form-group {
+    margin-bottom: 1.2rem;
+  }
+
+  .form-group label {
+    font-size: 0.85rem;
+    margin-bottom: 0.6rem;
+  }
+
+  .form-group input {
+    padding: 0.9rem 1rem;
+    font-size: 0.95rem;
+  }
+
+  .alert {
+    padding: 10px 12px;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+
+  .modal-footer {
+    padding: 14px 16px;
+    gap: 10px;
   }
 
   .btn {
-    min-height: 52px;
+    min-height: 50px;
     flex: 1;
     max-width: none;
+    font-size: 14px;
+    padding: 12px 16px;
   }
 }
 
@@ -2030,6 +2069,34 @@ const logout = () => {
   .settings-btn {
     width: 44px;
     height: 44px;
+  }
+
+  .settings-modal {
+    width: 100%;
+    max-width: 100%;
+    border-radius: 16px;
+  }
+
+  .options-modal {
+    max-height: 70vh;
+  }
+
+  .modal-body {
+    padding: 16px 14px;
+  }
+
+  .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .modal-footer {
+    flex-direction: row;
+    padding: 12px 14px;
+  }
+
+  .btn {
+    min-height: 48px;
+    font-size: 13px;
   }
 }
 </style>

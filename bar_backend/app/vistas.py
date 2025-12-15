@@ -2456,3 +2456,8 @@ def cambiar_contraseña_gestor(
     db.commit()
 
     return {"message": "Contraseña actualizada exitosamente"}
+
+
+@router.get("/hello")
+def hello_test():
+    return {"message": "¡Hola! La API está funcionando correctamente 🚀"}
