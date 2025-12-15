@@ -25,7 +25,7 @@ from sqlalchemy.orm import joinedload
 
 from conexion import get_db
 from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInventario, Dueno, Factura, FacturaInventario, Gasto, GestorPrincipal, Historial, Mujer, NotificacionExamenEnviada, Producto, ProductoEliminado, Tarea
-from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash
+from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash, GestorPasswordCheck
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -2402,37 +2402,32 @@ def obtener_gestor_principal(db: Session = Depends(get_db)):
     return gestor
 
 
+
 @router.put("/gestor_principal/update", response_model=GestorPrincipalOut)
 def actualizar_gestor_principal(
-    update_data: GestorPrincipalUpdate,
-    current_password: str = Form(...),  # Se enviará desde frontend
+    nombre: Optional[str] = Form(None),
+    correo: Optional[str] = Form(None),
     db: Session = Depends(get_db)
 ):
-    """Actualiza nombre y/o correo del Gestor Principal (requiere contraseña actual)"""
+    """Actualiza nombre y/o correo del Gestor Principal"""
     gestor = db.query(GestorPrincipal).first()
     if not gestor:
         raise HTTPException(status_code=404, detail="Gestor Principal no encontrado")
 
-    # Verificar contraseña actual
-    if not pwd_context.verify(current_password, gestor.contraseña):
-        raise HTTPException(status_code=401, detail="Contraseña actual incorrecta")
-
     # Validar correo único si se está cambiando
-    if update_data.correo and update_data.correo != gestor.correo:
-        if db.query(GestorPrincipal).filter(GestorPrincipal.correo == update_data.correo).first():
+    if correo and correo != gestor.correo:
+        if db.query(GestorPrincipal).filter(GestorPrincipal.correo == correo).first():
             raise HTTPException(status_code=400, detail="El correo ya está en uso")
 
     # Aplicar cambios
-    if update_data.nombre:
-        gestor.nombre = update_data.nombre
-    if update_data.correo:
-        gestor.correo = update_data.correo
+    if nombre:
+        gestor.nombre = nombre
+    if correo:
+        gestor.correo = correo
 
     db.commit()
     db.refresh(gestor)
     return gestor
-
-
 @router.put("/gestor_principal/password")
 def cambiar_contraseña_gestor(
     password_data: GestorPrincipalPasswordUpdate,
@@ -2456,8 +2451,18 @@ def cambiar_contraseña_gestor(
     db.commit()
 
     return {"message": "Contraseña actualizada exitosamente"}
-
-
-@router.get("/hello")
-def hello_test():
-    return {"message": "¡Hola! La API está funcionando correctamente 🚀"}
+@router.post("/gestor_principal/verify-password")
+def verificar_contraseña_gestor(
+    password_data: schemas.GestorPasswordCheck,  # ← Usar el schema específico
+    db: Session = Depends(get_db)
+):
+    """Verifica si la contraseña actual del Gestor Principal es correcta"""
+    gestor = db.query(GestorPrincipal).first()
+   
+    if not gestor:
+        raise HTTPException(status_code=404, detail="Gestor Principal no encontrado")
+    
+    if not pwd_context.verify(password_data.password, gestor.contraseña):
+        raise HTTPException(status_code=401, detail="Contraseña incorrecta")
+    
+    return {"message": "Contraseña verificada exitosamente"}

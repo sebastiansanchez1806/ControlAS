@@ -1163,3 +1163,7 @@ class GestorPrincipalOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class GestorPasswordCheck(BaseModel):
+    """Schema específico para verificar contraseña del Gestor Principal"""
+    password: str

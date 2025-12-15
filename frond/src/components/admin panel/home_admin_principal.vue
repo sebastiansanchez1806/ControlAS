@@ -443,11 +443,15 @@ const loadGestorData = async () => {
   }
 }
 
-// Métodos de configuración
+// ========================================
+// MÉTODOS DE CONFIGURACIÓN (CORREGIDOS)
+// ========================================
+
 const toggleSettingsMenu = () => {
   isSettingsMenuOpen.value = !isSettingsMenuOpen.value
 }
 
+// ✅ PASO 1: Verificar contraseña ANTES de abrir el modal
 const handleSettingsOptionClick = async (optionId) => {
   const { value: password } = await Swal.fire({
     title: 'Verificación de seguridad',
@@ -464,10 +468,27 @@ const handleSettingsOptionClick = async (optionId) => {
 
   if (!password) return
 
-  currentPassword.value = password
-  activeSettingsModal.value = optionId
-  isSettingsMenuOpen.value = false
-  resetSettingsForm()
+  // ✅ Verificar contraseña con el nuevo endpoint
+  try {
+    await axios.post(`${API_BASE_URL}/gestor_principal/verify-password`, {
+      password: password
+    })
+
+    // ✅ Si llegó aquí, la contraseña es correcta
+    currentPassword.value = password
+    activeSettingsModal.value = optionId
+    isSettingsMenuOpen.value = false
+    resetSettingsForm()
+
+  } catch (err) {
+    // ❌ Contraseña incorrecta
+    Swal.fire({
+      icon: 'error',
+      title: 'Contraseña incorrecta',
+      text: 'La contraseña que ingresaste no es correcta',
+      confirmButtonColor: '#d33'
+    })
+  }
 }
 
 const closeSettingsModal = () => {
@@ -491,7 +512,7 @@ const getSettingsModalTitle = () => {
   return titles[activeSettingsModal.value] || ''
 }
 
-// === MÉTODO CLAVE TOTALMENTE CORREGIDO ===
+// ✅ PASO 2: Enviar datos sin current_password (excepto para contraseña)
 const handleSettingsSubmit = async () => {
   settingsError.value = ''
   settingsLoading.value = true
@@ -529,13 +550,13 @@ const handleSettingsSubmit = async () => {
     let response
 
     if (activeSettingsModal.value === 'password') {
-      // Cambio de contraseña → JSON
+      // Cambio de contraseña → JSON (sí lleva current_password)
       response = await axios.put(`${API_BASE_URL}/gestor_principal/password`, {
         current_password: currentPassword.value,
         new_password: settingsNewValue.value
       })
     } else {
-      // Cambio de nombre o correo → FormData + endpoint correcto
+      // ✅ Cambio de nombre o correo → FormData SIN current_password
       const formData = new FormData()
       
       if (activeSettingsModal.value === 'name') {
@@ -543,8 +564,6 @@ const handleSettingsSubmit = async () => {
       } else if (activeSettingsModal.value === 'email') {
         formData.append('correo', settingsNewValue.value.trim())
       }
-      
-      formData.append('current_password', currentPassword.value)
 
       response = await axios.put(`${API_BASE_URL}/gestor_principal/update`, formData, {
         headers: {
@@ -585,7 +604,10 @@ const handleSettingsSubmit = async () => {
   }
 }
 
-// === Resto de métodos (sin cambios) ===
+// ========================================
+// RESTO DE MÉTODOS (SIN CAMBIOS)
+// ========================================
+
 const confirmDelete = (dueno) => {
   Swal.fire({
     title: `¿Eliminar a ${dueno.nombre}?`,
@@ -1031,7 +1053,7 @@ const logout = () => {
   align-items: center;
   position: sticky;
   top: 0;
-  background: #9f9f9f;
+  background: #313d4d;
   z-index: 10;
   border-radius: 16px 16px 0 0;
 }
