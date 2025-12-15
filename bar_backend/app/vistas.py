@@ -28,10 +28,11 @@ from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInvent
 from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash, GestorPasswordCheck
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-
+from datetime import datetime
 router = APIRouter(prefix="/api")
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+COLOMBIA_TZ = pytz.timezone('America/Bogota')
 @router.on_event("startup")
 def verificar_conexion():
     try:
@@ -754,16 +755,18 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
                 id=0, nombre=gasto_in.nombre, precio=gasto_in.precio
             ))
     total_neto = total_ingresos - total_gastos
+    now_colombia = datetime.now(COLOMBIA_TZ)
+
     nueva_factura = modelos.Factura(
         bar_id=factura_data.bar_id,
         administrador_id=factura_data.administrador_id,
         total_ingresos=total_ingresos,
-        total_gastos=total_gastos,  
-        total_neto=total_neto,  
+        total_gastos=total_gastos,
+        total_neto=total_neto,
         detalles_factura=detalles_factura_modelos,
-        gastos=gastos_modelos,   
-        fecha=datetime.now().date(),
-        hora=datetime.now()
+        gastos=gastos_modelos,
+        fecha=now_colombia.date(),
+        hora=now_colombia  # ← Ahora incluye la zona horaria correcta
     )
     db.add(nueva_factura)
     db.commit()
@@ -772,8 +775,10 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
     if not db_dueno:
         print("Advertencia: Dueño del bar no encontrado. No se puede enviar el correo.")
         return nueva_factura
+    hora_colombia = nueva_factura.hora.astimezone(COLOMBIA_TZ)
+
     fecha_formateada = nueva_factura.fecha.strftime("%d/%m/%Y")
-    hora_formateada = nueva_factura.hora.strftime("%I:%M %p")
+    hora_formateada = hora_colombia.strftime("%I:%M %p")
     invoice_data_for_email = schemas.FacturaData(
         id=nueva_factura.id,
         fecha=fecha_formateada,
@@ -1595,7 +1600,6 @@ def limpiar_tareas_completadas_mensual():
 
 # =============== ENDPOINT CORREGIDO Y DEFINITIVO ===============
 from fastapi import Request  # ← Agregar esta importación
-
 @router.post("/inventario/guardar-con-factura")
 async def guardar_inventario_con_factura(
     request: Request,  # ← AGREGAR REQUEST
@@ -1643,8 +1647,11 @@ async def guardar_inventario_con_factura(
         tipo_op = "nuevos_productos"
     elif nuevos and aumentos:
         tipo_op = "ambos"
-
+    
     # === CREAR FACTURA INVENTARIO ===
+    # 🔥 OBTENER HORA DE COLOMBIA ANTES DE CREAR
+    now_colombia = datetime.now(COLOMBIA_TZ)
+    
     nueva_factura_inv = FacturaInventario(
         bar_id=bar_id,
         administrador_id=administrador_id,
@@ -1652,7 +1659,9 @@ async def guardar_inventario_con_factura(
         tipo_operacion=tipo_op,
         archivo_factura=archivo_binario,
         nombre_archivo=nombre_archivo,
-        mime_type=mime_type
+        mime_type=mime_type,
+        fecha=now_colombia.date(),  # ✅ ASIGNAR EXPLÍCITAMENTE
+        hora=now_colombia          # ✅ AGREGAR HORA EXPLÍCITA
     )
     db.add(nueva_factura_inv)
     db.flush()
@@ -1725,6 +1734,7 @@ async def guardar_inventario_con_factura(
                 )
                 db.add(nuevo_prod)
                 db.flush()
+                
 
                 # ✅ Guardar detalle
                 detalle = DetalleFacturaInventario(

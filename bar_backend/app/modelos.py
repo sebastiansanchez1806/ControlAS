@@ -227,11 +227,8 @@ class FacturaInventario(Base):
     bar_id = Column(Integer, ForeignKey("bares.id"), nullable=False)
     administrador_id = Column(Integer, ForeignKey("administradores.id"), nullable=True)
     dueno_id = Column(Integer, ForeignKey("duenos.id"), nullable=True)
-    fecha = Column(Date, default=date.today, nullable=False)
-    
-    # AMBAS EN UTC, usando func.utc_timestamp() → garantizado UTC en MySQL
-  
-    hora = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    fecha = Column(Date, nullable=False)  # ✅ Sin default, se asigna en el endpoint
+    hora = Column(DateTime, nullable=False)  # ✅ Sin default, se asigna en el endpoint
     creado_el = Column(DateTime, server_default=func.now(), nullable=False) # Deja func.now() si no te da problemas
     
     tipo_operacion = Column(String(20), nullable=False)

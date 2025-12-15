@@ -44,11 +44,11 @@
           <li v-for="invoice in filteredInvoices" :key="invoice.id" @click="viewInvoiceDetails(invoice)" class="invoice-item">
             <div class="invoice-info-header">
               <span class="invoice-date">
-                📅 {{ new Date(invoice.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }) }}
-              </span>
+  📅 {{ formatInvoiceDate(invoice.fecha) }}
+</span>
               <span class="invoice-time">
-                🕒 {{ new Date(invoice.hora).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) }}
-              </span>
+  🕒 {{ formatInvoiceTime(invoice.hora) }}
+</span>
             </div>
             <div class="invoice-total">
               Total Neto: <span class="total-amount">{{ formatCurrency(invoice.total_neto) }}</span>
@@ -292,14 +292,14 @@
                   <span class="info-icon">📅</span>
                   <div class="info-content">
                     <span class="info-label">Fecha</span>
-                    <span class="info-value">{{ new Date(displayedInvoice.fecha).toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }) }}</span>
+                    <span class="info-value">{{ formatFullInvoiceDate(displayedInvoice.fecha) }}</span>
                   </div>
                 </div>
                 <div class="info-item">
                   <span class="info-icon">🕐</span>
                   <div class="info-content">
                     <span class="info-label">Hora</span>
-                    <span class="info-value">{{ new Date(displayedInvoice.hora).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) }}</span>
+                   <span class="info-value">{{ formatInvoiceTime(displayedInvoice.hora) }}</span>
                   </div>
                 </div>
                  <div class="info-item">
@@ -382,6 +382,8 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
+import { format, parseISO } from 'date-fns';
+import { es } from 'date-fns/locale';
 import { useAdminStore } from '@/stores/admin';
 import axios from 'axios';
 import { useRouter } from 'vue-router';
@@ -415,7 +417,28 @@ const page = ref(1);
 const pageSize = 20;
 const hasMore = ref(true);
 const loadingMore = ref(false);
+const formatInvoiceDate = (dateString) => {
+  if (!dateString) return '';
+  const date = parseISO(dateString);
+  return format(date, "d 'de' MMMM 'de' yyyy", { locale: es });
+};
 
+// Función para formatear la hora (12 horas con AM/PM)
+const formatInvoiceTime = (timeString) => {
+  if (!timeString) return '';
+  const date = parseISO(timeString);
+  return format(date, 'hh:mm a', { 
+    locale: es,
+    timeZone: 'America/Bogota'  // ← AGREGAR ESTA LÍNEA
+  });
+};
+
+// Función para fecha completa con día de la semana (solo en detalle)
+const formatFullInvoiceDate = (dateString) => {
+  if (!dateString) return '';
+  const date = parseISO(dateString);
+  return format(date, "EEEE, d 'de' MMMM 'de' yyyy", { locale: es });
+};
 // Propiedad computada para el producto actual
 const currentProduct = computed(() => {
   return products.value[currentProductIndex.value];
@@ -501,8 +524,8 @@ const filteredInvoices = computed(() => {
   }
   const query = searchQuery.value.toLowerCase();
   return invoices.value.filter(invoice => {
-    const invoiceDate = new Date(invoice.fecha).toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }).toLowerCase();
-    const invoiceTime = new Date(invoice.hora).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }).toLowerCase();
+    const invoiceDate = formatInvoiceDate(invoice.fecha).toLowerCase();
+    const invoiceTime = formatInvoiceTime(invoice.hora).toLowerCase();
     return invoiceDate.includes(query) || invoiceTime.includes(query);
   });
 });

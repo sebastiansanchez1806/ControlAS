@@ -266,8 +266,12 @@ const formatDate = (dateString) => {
 };
 
 const formatTime = (isoString) => {
-  const date = parseISO(isoString);
-  return format(date, "hh:mm a", { locale: es });
+  if (!isoString) return '';
+  const date = parseISO(isoString);
+  return format(date, 'hh:mm a', { 
+    locale: es,
+    timeZone: 'America/Bogota'  // ← Esta línea es la clave
+  });
 };
 
 const formatRelativeTime = (isoString) => {
