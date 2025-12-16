@@ -765,8 +765,8 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
         total_neto=total_neto,
         detalles_factura=detalles_factura_modelos,
         gastos=gastos_modelos,
-        fecha=now_colombia.date(),
-        hora=now_colombia  # ← Ahora incluye la zona horaria correcta
+        fecha=now_colombia.date(),  # ✅ AGREGAR ESTO
+        hora=now_colombia   # ← Ahora incluye la zona horaria correcta
     )
     db.add(nueva_factura)
     db.commit()

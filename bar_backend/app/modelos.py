@@ -151,8 +151,8 @@ class ProductoEliminado(Base):
 class Factura(Base):
     __tablename__ = "facturas"
     id = Column(Integer, primary_key=True, index=True)
-    fecha = Column(Date, default=date.today)
-    hora = Column(DateTime, default=datetime.utcnow)
+    fecha = Column(Date, nullable=False)  # ✅ Sin default
+    hora = Column(DateTime, nullable=False)  # ✅ Sin default
     bar_id = Column(Integer, ForeignKey("bares.id"))
     administrador_id = Column(Integer, ForeignKey("administradores.id"))
     total_ingresos = Column(Float, nullable=False, default=0.0)
@@ -227,9 +227,11 @@ class FacturaInventario(Base):
     bar_id = Column(Integer, ForeignKey("bares.id"), nullable=False)
     administrador_id = Column(Integer, ForeignKey("administradores.id"), nullable=True)
     dueno_id = Column(Integer, ForeignKey("duenos.id"), nullable=True)
-    fecha = Column(Date, nullable=False)  # ✅ Sin default, se asigna en el endpoint
-    hora = Column(DateTime, nullable=False)  # ✅ Sin default, se asigna en el endpoint
-    creado_el = Column(DateTime, server_default=func.now(), nullable=False) # Deja func.now() si no te da problemas
+    
+    # ✅ VOLVER A COMO ESTABA ANTES (con defaults)
+    fecha = Column(Date, default=date.today, nullable=False)
+    hora = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    creado_el = Column(DateTime, server_default=func.now(), nullable=False)
     
     tipo_operacion = Column(String(20), nullable=False)
     archivo_factura = Column(LONGBLOB, nullable=True)
