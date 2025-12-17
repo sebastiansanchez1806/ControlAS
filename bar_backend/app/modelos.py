@@ -22,6 +22,9 @@ from datetime import date, datetime, timezone
 from conexion import Base
 from sqlalchemy.dialects.mysql import LONGTEXT as MYSQL_LONGTEXT, LONGBLOB as MYSQL_LONGBLOB
 
+import pytz  # ← AGREGAR ESTO (para COLOMBIA_TZ)
+COLOMBIA_TZ = pytz.timezone('America/Bogota')  # ← AGREGAR ESTO
+
 # === DETECCIÓN AUTOMÁTICA DE ENTORNO ===
 # Si existe la carpeta /var/www → estamos en el servidor (producción)
 es_produccion = os.path.exists("/var/www")
@@ -81,7 +84,7 @@ class Mujer(Base):
     __tablename__ = "mujeres"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
-    fecha_agregado = Column(DateTime, default=datetime.utcnow)
+    fecha_agregado = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ))
     documento = Column(String(255), nullable=True) 
     telefono = Column(String(50), nullable=True)
     foto = Column(TipoTextoLargo, nullable=True)
@@ -154,7 +157,7 @@ class Historial(Base):
     
     mensaje = Column(String(255), nullable=False)
     tipo = Column(String(50), nullable=False)
-    tiempo = Column(DateTime, server_default=func.now())
+    tiempo = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ))
 
     bar_rel = relationship("Bar", back_populates="historial_bares")
     producto_rel = relationship("Producto", back_populates="historial_productos")
@@ -169,7 +172,7 @@ class ProductoEliminado(Base):
     cantidad = Column(Integer, nullable=False)
     precio = Column(Float, nullable=False)
     bar_id = Column(Integer, ForeignKey("bares.id"))
-    tiempo_eliminacion = Column(DateTime, server_default=func.now())
+    tiempo_eliminacion = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ))
 
     bar = relationship("Bar", back_populates="productos_eliminados")
 
@@ -179,7 +182,8 @@ class Factura(Base):
     __tablename__ = "facturas"
     id = Column(Integer, primary_key=True, index=True)
     fecha = Column(Date, nullable=False)  # ✅ Sin default
-    hora = Column(DateTime, nullable=False)  # ✅ Sin default
+    hora = Column(DateTime(timezone=True), nullable=False)  # ✅ Sin default
+
     bar_id = Column(Integer, ForeignKey("bares.id"))
     administrador_id = Column(Integer, ForeignKey("administradores.id"))
     total_ingresos = Column(Float, nullable=False, default=0.0)
@@ -231,7 +235,7 @@ class PasswordResetToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     token = Column(String(255), unique=True, nullable=False, index=True)
     dueno_id = Column(Integer, ForeignKey("duenos.id"))
-    expires_at = Column(DateTime, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
 
 
 # models.py → al final del archivo
@@ -240,7 +244,7 @@ class NotificacionExamenEnviada(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     mujer_id = Column(Integer, ForeignKey("mujeres.id", ondelete="CASCADE"), nullable=False)
-    fecha_envio = Column(DateTime, server_default=func.now())
+    fecha_envio = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ))
     fecha_vencimiento_notificada = Column(Date, nullable=False)
     
     # Esto hace que sea único por mujer + fecha de vencimiento
@@ -258,8 +262,8 @@ class FacturaInventario(Base):
     
     # ✅ VOLVER A COMO ESTABA ANTES (con defaults)
     fecha = Column(Date, default=date.today, nullable=False)
-    hora = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    creado_el = Column(DateTime, server_default=func.now(), nullable=False)
+    hora = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ), nullable=False)
+    creado_el = Column(DateTime(timezone=True), default=lambda: datetime.now(COLOMBIA_TZ), nullable=False)
     
     tipo_operacion = Column(String(20), nullable=False)
     archivo_factura = Column(TipoBlobLargo, nullable=True)

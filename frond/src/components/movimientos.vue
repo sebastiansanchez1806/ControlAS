@@ -1,7 +1,7 @@
 <template>
   <div class="valka-history-container">
     <header class="valka-header">
-      <h1 class="header-title">{{ activeBarStore.name }}</h1>
+      <h1 class="header-title">Movimientos</h1>
       <p class="header-subtitle">
   El historial de la nevera se borrará el primer día de cada mes a las 3:00 a.m. y se enviará a tu correo.
 </p>

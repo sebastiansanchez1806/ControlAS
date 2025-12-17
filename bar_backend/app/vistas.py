@@ -273,6 +273,7 @@ def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db))
             "dueno_id": bar.dueno_id
         }
     }
+
 @router.post("/mujeres", response_model=MujerOut)
 def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
     # Validación extra
@@ -293,7 +294,7 @@ def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
 
     nueva_mujer = Mujer(
         nombre=mujer.nombre,
-        fecha_agregado=datetime.utcnow(),
+        fecha_agregado=datetime.now(COLOMBIA_TZ),  # ← CORREGIDO: era utcnow()
         documento=mujer.documento,
         telefono=mujer.telefono,
         foto=foto_url,
@@ -496,7 +497,7 @@ def completar_tarea(tarea_id: int, db: Session = Depends(get_db)):
             detail=f"La tarea con el id {tarea_id} no fue encontrada."
         )
     tarea.estado = "completada"
-    tarea.fecha_completada = date.today()
+    tarea.fecha_completada = datetime.now(COLOMBIA_TZ).date()  # ← CORREGIDO: era date.today()
     db.commit()
     db.refresh(tarea)
     return tarea
@@ -589,6 +590,7 @@ def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' marcado como eliminado y su imagen borrada de la nube."}
+
 from fastapi import HTTPException, status
 import logging
 
@@ -612,7 +614,7 @@ def agregar_a_historial(
         producto_id=producto_id,
         mensaje=mensaje,
         tipo=tipo,
-        tiempo=datetime.now()
+        tiempo=datetime.now(COLOMBIA_TZ)  # ← CORREGIDO: ahora usa hora de Bogotá
     )
     db.add(nuevo)
     logger.info("Historial agregado a la sesión con db.add()")
@@ -789,7 +791,7 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
             ))
     
     total_neto = total_ingresos - total_gastos
-    now_colombia = datetime.now(COLOMBIA_TZ)
+    now_colombia = datetime.now(COLOMBIA_TZ)  # ← Ya correcto
 
     nueva_factura = modelos.Factura(
         bar_id=factura_data.bar_id,
@@ -906,6 +908,7 @@ def get_facturas_by_admin_and_bar(
         facturas_con_info.append(factura_dict)
 
     return facturas_con_info
+
 @router.post("/administradores", response_model=AdministradorOut)
 def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)):
     # 1. Verificar si el nombre ya pertenece a un Dueño
@@ -1018,7 +1021,6 @@ def get_facturas_by_bar(
         facturas_con_info.append(factura_dict)
 
     return facturas_con_info
-
 @router.get("/verificar_dueno", response_model=Dict[str, bool])
 def verificar_existencia_dueno(db: Session = Depends(get_db)):
     """
@@ -1132,7 +1134,7 @@ async def delete_history_and_send_email_endpoint(bar_id: int, db: Session = Depe
 
     history_data_for_email = schemas.HistorialEmailData(
         bar_nombre=bar.nombre,
-        fecha_borrado=datetime.now().strftime('%d/%m/%Y %H:%M:%S'),
+        fecha_borrado=datetime.now(COLOMBIA_TZ).strftime('%d/%m/%Y %H:%M:%S'),  # ← CORREGIDO
         historial=[schemas.HistorialEmailItem.from_orm(item) for item in history_to_delete]
     )
     
@@ -1151,7 +1153,7 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
         return {"message": "Si el correo está registrado, recibirás un código para restablecer tu contraseña."}
 
     reset_code = f"{secrets.randbelow(1000000):06d}"
-    expires_at = datetime.now() + timedelta(minutes=15)
+    expires_at = datetime.now(COLOMBIA_TZ) + timedelta(minutes=15)  # ← CORREGIDO
 
     db.query(modelos.PasswordResetToken).filter(modelos.PasswordResetToken.dueno_id == db_dueno.id).delete()
     db.commit()
@@ -1213,7 +1215,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     db_token = db.query(modelos.PasswordResetToken).filter(modelos.PasswordResetToken.token == request.token).first()
     if not db_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código inválido.")
-    if db_token.expires_at < datetime.now():
+    if db_token.expires_at < datetime.now(COLOMBIA_TZ):  # ← CORREGIDO
         db.delete(db_token)
         db.commit()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El código ha expirado.")
@@ -1267,7 +1269,7 @@ from dateutil.relativedelta import relativedelta
 
 def chequear_y_notificar_examenes_vencidos():
     db = next(get_db())
-    hoy = date.today()
+    hoy = datetime.now(COLOMBIA_TZ).date()  # ← CORREGIDO: era date.today()
     
     try:
         fecha_limite = hoy - relativedelta(months=6)
@@ -1412,13 +1414,14 @@ def limpiar_facturas_y_productos_eliminados_mensual():
             db.query(modelos.ProductoEliminado).filter(modelos.ProductoEliminado.bar_id == bar.id).delete(synchronize_session=False)
 
             db.commit()
-            print(f"[{datetime.now()}] Limpieza mensual automática completada → {bar.nombre} (ID: {bar.id})")
+            print(f"[{datetime.now(COLOMBIA_TZ)}] Limpieza mensual automática completada → {bar.nombre} (ID: {bar.id})")  # ← CORREGIDO
 
     except Exception as e:
         db.rollback()
         print(f"ERROR en limpieza mensual automática: {e}")
     finally:
         db.close()
+
 def limpiar_tareas_completadas_mensual():
     db: Session = next(get_db())
     try:
@@ -1431,10 +1434,10 @@ def limpiar_tareas_completadas_mensual():
         ).all()
 
         if not tareas_completadas:
-            print(f"[{datetime.now()}] No hay tareas completadas. Nada que enviar ni borrar.")
+            print(f"[{datetime.now(COLOMBIA_TZ)}] No hay tareas completadas. Nada que enviar ni borrar.")  # ← CORREGIDO
             return
 
-        print(f"[{datetime.now()}] ¡{len(tareas_completadas)} tareas completadas encontradas! Preparando correos...")
+        print(f"[{datetime.now(COLOMBIA_TZ)}] ¡{len(tareas_completadas)} tareas completadas encontradas! Preparando correos...")  # ← CORREGIDO
 
         from collections import defaultdict
         tareas_por_bar = defaultdict(list)
@@ -1489,7 +1492,7 @@ def limpiar_tareas_completadas_mensual():
 
         borradas = db.query(modelos.Tarea).filter(modelos.Tarea.estado == "completada").delete()
         db.commit()
-        print(f"[{datetime.now()}] ¡ÉXITO TOTAL! {borradas} tareas completadas eliminadas permanentemente.")
+        print(f"[{datetime.now(COLOMBIA_TZ)}] ¡ÉXITO TOTAL! {borradas} tareas completadas eliminadas permanentemente.")  # ← CORREGIDO
 
     except Exception as e:
         db.rollback()
@@ -1498,7 +1501,6 @@ def limpiar_tareas_completadas_mensual():
         traceback.print_exc()
     finally:
         db.close()
-
 @router.post("/inventario/guardar-con-factura")
 async def guardar_inventario_con_factura(
     request: Request,
@@ -1553,7 +1555,7 @@ async def guardar_inventario_con_factura(
         tipo_op = "ambos"
     
     # CREAR FACTURA INVENTARIO
-    now_colombia = datetime.now(COLOMBIA_TZ)
+    now_colombia = datetime.now(COLOMBIA_TZ)  # ← Ya correcto
     
     nueva_factura_inv = FacturaInventario(
         bar_id=bar_id,
@@ -1790,6 +1792,7 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="Error al eliminar el dueño")
+
 @router.get("/inventario/facturas/{bar_id}")
 async def obtener_facturas_inventario(
     bar_id: int,
@@ -1917,7 +1920,6 @@ async def descargar_factura(
     
     # Redirigimos directamente a Cloudinary (más rápido y sin cargar tu servidor)
     return RedirectResponse(url=factura.observaciones)
-
 # === FUNCIÓN DE RESPALDO MENSUAL ===
 def backup_y_limpiar_facturas_inventario_mensual():
     from datetime import datetime, timezone
@@ -2083,7 +2085,7 @@ def backup_y_limpiar_facturas_inventario_mensual():
                     <div style="background: #111827; padding: 24px; text-align: center;">
                         <p style="margin: 0; color: #9ca3af; font-size: 0.9em;">
                             <strong style="color: white;">CONTROL AS</strong> • Sistema de Gestión Premium<br>
-                            {datetime.now().strftime('%d de %B de %Y • %H:%M')}
+                            {datetime.now(COLOMBIA_TZ).strftime('%d de %B de %Y • %H:%M')}  # ← CORREGIDO
                         </p>
                     </div>
                 </div>
@@ -2129,7 +2131,7 @@ def gestor_forgot_password(request: schemas.ForgotPasswordRequest, db: Session =
     from datetime import datetime, timedelta
 
     reset_code = f"{secrets.randbelow(1000000):06d}"
-    expires_at = datetime.now() + timedelta(minutes=15)
+    expires_at = datetime.now(COLOMBIA_TZ) + timedelta(minutes=15)  # ← CORREGIDO
 
     # Eliminar tokens anteriores del gestor (usamos dueno_id NULL para identificarlo)
     db.query(modelos.PasswordResetToken).filter(modelos.PasswordResetToken.dueno_id.is_(None)).delete()
@@ -2200,7 +2202,7 @@ def gestor_reset_password(request: schemas.ResetPasswordRequest, db: Session = D
     if not db_token:
         raise HTTPException(status_code=400, detail="Código inválido o ya utilizado.")
 
-    if db_token.expires_at < datetime.now():
+    if db_token.expires_at < datetime.now(COLOMBIA_TZ):  # ← CORREGIDO
         db.delete(db_token)
         db.commit()
         raise HTTPException(status_code=400, detail="El código ha expirado.")
@@ -2238,7 +2240,7 @@ def gestor_verify_reset_code(request: schemas.VerifyCodeRequest, db: Session = D
     if not db_token:
         raise HTTPException(status_code=400, detail="Código inválido o ya utilizado.")
 
-    if db_token.expires_at < datetime.now():
+    if db_token.expires_at < datetime.now(COLOMBIA_TZ):  # ← CORREGIDO
         db.delete(db_token)
         db.commit()
         raise HTTPException(status_code=400, detail="El código ha expirado.")
