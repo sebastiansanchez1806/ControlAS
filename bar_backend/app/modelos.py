@@ -1,11 +1,36 @@
 # models.py - Modelos Corregidos y Completos con Cascade
-from sqlalchemy import Boolean, Column, DateTime, Float, Integer, String, ForeignKey, Date, Text, UniqueConstraint, func
+# → Versión FINAL compatible con MySQL (producción) y SQLite (local)
+# → Detecta automáticamente el entorno y usa tipos correctos
+
+import os
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    ForeignKey,
+    Date,
+    Text,
+    LargeBinary,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import relationship
 from datetime import date, datetime, timezone
 from conexion import Base
-from sqlalchemy.dialects.mysql import DATETIME, LONGTEXT, LONGBLOB
+from sqlalchemy.dialects.mysql import LONGTEXT as MYSQL_LONGTEXT, LONGBLOB as MYSQL_LONGBLOB
 
-from sqlalchemy.dialects.mysql import LONGTEXT, LONGBLOB
+# === DETECCIÓN AUTOMÁTICA DE ENTORNO ===
+# Si existe la carpeta /var/www → estamos en el servidor (producción)
+es_produccion = os.path.exists("/var/www")
+
+# Definimos tipos compatibles con ambos motores
+TipoTextoLargo = MYSQL_LONGTEXT if es_produccion else Text
+TipoBlobLargo = MYSQL_LONGBLOB if es_produccion else LargeBinary
+
+
 class GestorPrincipal(Base):
     __tablename__ = "gestores_principales"
     
@@ -13,13 +38,15 @@ class GestorPrincipal(Base):
     nombre = Column(String(100), nullable=False)
     correo = Column(String(100), unique=True, nullable=False)
     contraseña = Column(String(100), nullable=False)
+
+
 # PERFIL GENERAL (Dueño del bar)
 class Dueno(Base):
     __tablename__ = "duenos"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False, unique=True)
     contraseña = Column(String(100), nullable=False)
-    imagen = Column(LONGTEXT, nullable=True) 
+    imagen = Column(TipoTextoLargo, nullable=True) 
     estado = Column(String(50), nullable=True)
     telefono = Column(String(50), nullable=False)
     correo = Column(String(100), unique=True, nullable=False)
@@ -36,7 +63,7 @@ class Bar(Base):
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
     ubicacion = Column(String(255), nullable=False)
-    imagen = Column(LONGTEXT, nullable=True) 
+    imagen = Column(TipoTextoLargo, nullable=True) 
     dueno_id = Column(Integer, ForeignKey("duenos.id", ondelete="CASCADE"), nullable=False)
     tipo = Column(String(50), default="bar", nullable=False)
     dueno = relationship("Dueno", back_populates="bares")
@@ -49,7 +76,6 @@ class Bar(Base):
     facturas = relationship("Factura", back_populates="bar_rel", cascade="all, delete-orphan")
 
 
-# MUJER
 # MUJER (versión definitiva y súper limpia)
 class Mujer(Base):
     __tablename__ = "mujeres"
@@ -58,15 +84,16 @@ class Mujer(Base):
     fecha_agregado = Column(DateTime, default=datetime.utcnow)
     documento = Column(String(255), nullable=True) 
     telefono = Column(String(50), nullable=True)
-    foto = Column(LONGTEXT, nullable=True)
+    foto = Column(TipoTextoLargo, nullable=True)
     agregado_por = Column(Integer, nullable=True)
     
     # ← SOLO ESTOS DOS CAMPOS (100% OPCIONALES)
     fecha_examen = Column(Date, nullable=True)          # Fecha del último examen médico
-    foto_examen = Column(LONGTEXT, nullable=True)       # Foto o PDF del resultado (base64)
+    foto_examen = Column(TipoTextoLargo, nullable=True)       # Foto o PDF del resultado (base64)
 
     dueno_id = Column(Integer, ForeignKey("duenos.id"))
     dueno = relationship("Dueno", back_populates="mujeres")
+
 
 # ADMINISTRADOR
 class Administrador(Base):
@@ -75,7 +102,7 @@ class Administrador(Base):
     nombre = Column(String(100), nullable=False)
     correo = Column(String(255), unique=True, nullable=False)
     documento = Column(String(20), unique=True, nullable=False)
-    foto = Column(LONGTEXT, nullable=True)
+    foto = Column(TipoTextoLargo, nullable=True)
     fecha_agregado = Column(Date, default=date.today)
     telefono = Column(String(50), nullable=False)
     contraseña = Column(String(100), nullable=False)
@@ -106,7 +133,7 @@ class Producto(Base):
     __tablename__ = "productos"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
-    imagen = Column(LONGTEXT, nullable=True)
+    imagen = Column(TipoTextoLargo, nullable=True)
     cantidad = Column(Integer, nullable=False)
     precio = Column(Float, nullable=False)
     bar_id = Column(Integer, ForeignKey("bares.id"))
@@ -138,7 +165,7 @@ class ProductoEliminado(Base):
     __tablename__ = "productos_eliminados"
     id = Column(Integer, primary_key=True, index=True)
     nombre = Column(String(100), nullable=False)
-    imagen = Column(LONGTEXT, nullable=True)
+    imagen = Column(TipoTextoLargo, nullable=True)
     cantidad = Column(Integer, nullable=False)
     precio = Column(Float, nullable=False)
     bar_id = Column(Integer, ForeignKey("bares.id"))
@@ -219,6 +246,7 @@ class NotificacionExamenEnviada(Base):
     # Esto hace que sea único por mujer + fecha de vencimiento
     __table_args__ = (UniqueConstraint('mujer_id', 'fecha_vencimiento_notificada', name='uniq_mujer_vencimiento'),)
 
+
 # === NUEVAS TABLAS PARA GESTIÓN DE INVENTARIO CON FACTURA ===
 class FacturaInventario(Base):
     __tablename__ = "facturas_inventario"
@@ -234,7 +262,7 @@ class FacturaInventario(Base):
     creado_el = Column(DateTime, server_default=func.now(), nullable=False)
     
     tipo_operacion = Column(String(20), nullable=False)
-    archivo_factura = Column(LONGBLOB, nullable=True)
+    archivo_factura = Column(TipoBlobLargo, nullable=True)
     nombre_archivo = Column(String(255), nullable=True)
     mime_type = Column(String(100), nullable=True)
     observaciones = Column(Text, nullable=True)
@@ -245,6 +273,8 @@ class FacturaInventario(Base):
     
     detalles = relationship("DetalleFacturaInventario", back_populates="factura_inventario", 
                             cascade="all, delete-orphan")
+
+
 class DetalleFacturaInventario(Base):
     __tablename__ = "detalles_factura_inventario"
     
@@ -252,15 +282,10 @@ class DetalleFacturaInventario(Base):
     factura_inventario_id = Column(Integer, ForeignKey("facturas_inventario.id"), nullable=False)
     producto_id = Column(Integer, ForeignKey("productos.id"), nullable=True)
     nombre_producto = Column(String(150), nullable=False)
-    imagen_producto = Column(LONGTEXT, nullable=True) 
+    imagen_producto = Column(TipoTextoLargo, nullable=True) 
     cantidad = Column(Integer, nullable=False)
     precio_unitario = Column(Float, nullable=True)
     es_nuevo_producto = Column(Boolean, default=False)
 
     factura_inventario = relationship("FacturaInventario", back_populates="detalles")
     producto = relationship("Producto")
-
-
-
-
-
