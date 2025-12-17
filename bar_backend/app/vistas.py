@@ -21,16 +21,34 @@ from conexion import engine
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
-from app.cloudinary_utils import eliminar_imagen_de_cloudinary
 from conexion import get_db
-from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInventario, Dueno, Factura, FacturaInventario, Gasto, GestorPrincipal, Historial, Mujer, NotificacionExamenEnviada, Producto, ProductoEliminado, Tarea
-from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash, GestorPasswordCheck
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from datetime import datetime
 
-# NUEVA IMPORTACIÓN PARA CLOUDINARY
-from app.cloudinary_utils import subir_imagen_a_cloudinary
+# === IMPORTS DE CLOUDINARY ===
+from app.cloudinary_utils import (
+    subir_imagen_a_cloudinary,
+    eliminar_imagen_de_cloudinary,
+    subir_pdf_a_cloudinary
+)
+
+from app.modelos import (
+    Administrador, Bar, DetalleFactura, DetalleFacturaInventario, 
+    Dueno, Factura, FacturaInventario, Gasto, GestorPrincipal, 
+    Historial, Mujer, NotificacionExamenEnviada, Producto, 
+    ProductoEliminado, Tarea
+)
+
+from app.schemas import (
+    ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, 
+    BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, 
+    DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, 
+    GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, 
+    GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, 
+    LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, 
+    ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, 
+    TareaCreate, TareaOut, generate_invoice_html, get_password_hash, GestorPasswordCheck
+)
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 router = APIRouter(prefix="/api")
 
@@ -58,80 +76,63 @@ def crear_dueno(dueno: DuenoCreate, db: Session = Depends(get_db)):
 
     hashed_password = pwd_context.hash(dueno.contraseña)
 
-    # SUBIR IMAGEN A CLOUDINARY (si hay imagen en base64)
+    # SUBIR IMAGEN DEL DUEÑO A CLOUDINARY
     imagen_url = subir_imagen_a_cloudinary(dueno.imagen, carpeta="duenos")
 
     nuevo_dueno = modelos.Dueno(
         nombre=dueno.nombre,
         correo=dueno.correo,
         contraseña=hashed_password,
-        imagen=imagen_url,  # ← Ahora guarda URL o base64 (si falla Cloudinary)
+        imagen=imagen_url,
         estado=dueno.estado or "activo",
         telefono=dueno.telefono,
-        cantidad_bares=dueno.cantidad_bares  # ← AGREGADO
+        cantidad_bares=dueno.cantidad_bares
     )
     db.add(nuevo_dueno)
     db.commit()
     db.refresh(nuevo_dueno)
     return nuevo_dueno
-# IMPORTACIÓN DE CLOUDINARY (agregar arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
-
-# ... (todo el código anterior queda igual hasta el login)
 
 @router.post("/login", response_model=LoginResponse)
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    # 🔹 Lógica de login para Dueño (sin bar_id)
     if request.bar_id is None:
         dueno = db.query(Dueno).filter(Dueno.nombre == request.nombre).first()
         if not dueno:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-        # Verificar si la cuenta está inactiva
         if dueno.estado == "inactivo":
             raise HTTPException(
                 status_code=403,
                 detail="Tu cuenta está bloqueada por falta de pago. Por favor, comunícate con servicio al cliente para reactivarla."
             )
-
-        # Verificar contraseña
         if not pwd_context.verify(request.contraseña, dueno.contraseña):
             raise HTTPException(status_code=401, detail="Contraseña incorrecta")
-
-        # Login exitoso
         return LoginResponse(
             id=dueno.id,
             nombre=dueno.nombre,
             correo=dueno.correo,
             tipo="dueno",
             telefono=dueno.telefono,
-            imagen=dueno.imagen,  # ← Ya sea base64 o URL de Cloudinary, funciona igual
+            imagen=dueno.imagen,
             foto=None,
             bar_id=None,
             dueno_id=None,
             bar_nombre=None
         )
-
-    # 🔹 Lógica de login para Administrador (con bar_id)
     else:
         administrador = db.query(Administrador).filter(
             Administrador.nombre == request.nombre,
             Administrador.bar_id == request.bar_id
         ).first()
-        
         if not administrador:
             raise HTTPException(
                 status_code=404, 
                 detail="Administrador no encontrado en este bar o credenciales incorrectas"
             )
-
         if not pwd_context.verify(request.contraseña, administrador.contraseña):
             raise HTTPException(status_code=401, detail="Contraseña incorrecta")
-
         bar = db.query(Bar).filter(Bar.id == administrador.bar_id).first()
         bar_nombre = bar.nombre if bar else None
         dueno_id = bar.dueno_id if bar else None
-
         return LoginResponse(
             id=administrador.id,
             nombre=administrador.nombre,
@@ -139,20 +140,17 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             tipo="administrador",
             telefono=administrador.telefono,
             imagen=None,
-            foto=administrador.foto,  # ← Ya sea base64 o URL de Cloudinary
+            foto=administrador.foto,
             bar_id=administrador.bar_id,
             dueno_id=dueno_id,
             bar_nombre=bar_nombre
         )
 
-# endpoint corregido:
 @router.get("/bares/dueno/{dueno_id}", response_model=dict)
 def obtener_bares_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
     bares = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
-    
     if not bares:
         return {"mensaje": "Este dueño no tiene bares registrados", "bares": []}
-
     lista_bares = [
         {
             "id": bar.id,
@@ -160,11 +158,10 @@ def obtener_bares_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
             "ubicacion": bar.ubicacion,
             "dueno_id": bar.dueno_id,
             "tipo": bar.tipo, 
-            "imagen": bar.imagen,  # ← URL de Cloudinary o base64 antiguo (funciona igual en frontend)
+            "imagen": bar.imagen,
         } 
         for bar in bares
     ]
-
     return {
         "mensaje": "Bares encontrados exitosamente",
         "bares": lista_bares
@@ -172,28 +169,24 @@ def obtener_bares_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
 
 @router.post("/crea_bares", response_model=dict)
 def crear_bar(bar: BarCreate, db: Session = Depends(get_db)):
-    # SUBIR IMAGEN DEL BAR A CLOUDINARY
     imagen_url = subir_imagen_a_cloudinary(bar.imagen, carpeta="bares")
-
     nuevo_bar = Bar(
         nombre=bar.nombre,
         ubicacion=bar.ubicacion,
-        imagen=imagen_url,  # ← Guardamos URL de Cloudinary
+        imagen=imagen_url,
         dueno_id=bar.dueno_id,
         tipo=bar.tipo 
     )
-    
     db.add(nuevo_bar)
     db.commit()
     db.refresh(nuevo_bar)
-    
     return {
         "mensaje": "Bar creado exitosamente",
         "bar": {
             "id": nuevo_bar.id,
             "nombre": nuevo_bar.nombre,
             "ubicacion": nuevo_bar.ubicacion,
-            "imagen": nuevo_bar.imagen,  # ← Devuelve la URL
+            "imagen": nuevo_bar.imagen,
             "dueno_id": nuevo_bar.dueno_id,
             "tipo_local": nuevo_bar.tipo
         }
@@ -204,9 +197,7 @@ def info_dueno(dueno_id: int, db: Session = Depends(get_db)):
     dueno = db.query(Dueno).filter(Dueno.id == dueno_id).first()
     if not dueno:
         raise HTTPException(status_code=404, detail="Dueño no encontrado")
-    
     bares_count = db.query(Bar).filter(Bar.dueno_id == dueno_id).count()
-
     return {
         "cantidad_permitida": dueno.cantidad_bares,
         "cantidad_actual": bares_count,
@@ -216,55 +207,46 @@ def info_dueno(dueno_id: int, db: Session = Depends(get_db)):
 @router.delete("/bares_eliminar/{bar_id}", response_model=dict)
 def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
-   
     if not bar:
         raise HTTPException(status_code=404, detail="Bar no encontrado")
     
     nombre_bar = bar.nombre
    
     try:
-        # === NUEVO: Borrar imagen del bar de Cloudinary ===
+        # Borrar imagen del bar
         if bar.imagen:
             eliminar_imagen_de_cloudinary(bar.imagen)
         
-        # === Borrar imágenes de todos los productos del bar ===
+        # Borrar imágenes de productos
         productos = db.query(Producto).filter(Producto.bar_id == bar_id).all()
         for prod in productos:
             if prod.imagen:
                 eliminar_imagen_de_cloudinary(prod.imagen)
         
-        # === Borrar imágenes de todos los administradores del bar ===
+        # Borrar fotos de administradores
         admins = db.query(Administrador).filter(Administrador.bar_id == bar_id).all()
         for admin in admins:
             if admin.foto:
                 eliminar_imagen_de_cloudinary(admin.foto)
         
-        # === El cascade de SQLAlchemy ya borra todo lo demás ===
-        # (facturas, historial, tareas, etc.)
-        
-        # ✅ Eliminar manualmente las facturas de inventario (como ya tenías)
-        facturas_inventario = db.query(FacturaInventario).filter(
-            FacturaInventario.bar_id == bar_id
-        ).all()
-       
+        # Eliminar facturas de inventario manualmente
+        facturas_inventario = db.query(FacturaInventario).filter(FacturaInventario.bar_id == bar_id).all()
         for factura_inv in facturas_inventario:
             db.query(DetalleFacturaInventario).filter(
                 DetalleFacturaInventario.factura_inventario_id == factura_inv.id
             ).delete()
+        db.query(FacturaInventario).filter(FacturaInventario.bar_id == bar_id).delete()
        
-        db.query(FacturaInventario).filter(
-            FacturaInventario.bar_id == bar_id
-        ).delete()
-       
-        # ✅ Finalmente eliminar el bar
+        # Eliminar el bar (cascade borra el resto)
         db.delete(bar)
         db.commit()
         
-        return {"mensaje": f"Bar '{nombre_bar}' y todos sus registros e imágenes eliminados exitosamente"}
+        return {"mensaje": f"Bar '{nombre_bar}' y todas sus imágenes eliminadas exitosamente"}
         
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")
+
 @router.put("/bares_actualizar/{bar_id}", response_model=dict)
 def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
@@ -273,12 +255,9 @@ def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db))
 
     if datos_bar.nombre is not None:
         bar.nombre = datos_bar.nombre
-
     if datos_bar.ubicacion is not None:
         bar.ubicacion = datos_bar.ubicacion
-
     if datos_bar.imagen is not None:
-        # SUBIR NUEVA IMAGEN A CLOUDINARY
         bar.imagen = subir_imagen_a_cloudinary(datos_bar.imagen, carpeta="bares")
 
     db.commit()
@@ -290,11 +269,10 @@ def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db))
             "id": bar.id,
             "nombre": bar.nombre,
             "ubicacion": bar.ubicacion,
-            "imagen": bar.imagen,  # ← Devuelve la nueva URL
+            "imagen": bar.imagen,
             "dueno_id": bar.dueno_id
         }
     }
-
 @router.post("/mujeres", response_model=MujerOut)
 def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
     # Validación extra
@@ -329,13 +307,14 @@ def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nueva_mujer)
     return nueva_mujer  
+
 @router.delete("/mujeres_eliminar/{mujer_id}", response_model=dict)
 def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):
     mujer = db.query(Mujer).filter(Mujer.id == mujer_id).first()
     if not mujer:
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
     
-    # === NUEVO: Borrar fotos de Cloudinary ===
+    # Borrar fotos de Cloudinary
     if mujer.foto:
         eliminar_imagen_de_cloudinary(mujer.foto)
     if mujer.foto_examen:
@@ -352,7 +331,6 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
 
     fecha_examen_anterior = mujer.fecha_examen
-
     update_data = actualizacion.dict(exclude_unset=True)
 
     # SUBIR IMÁGENES NUEVAS SI SE ENVÍAN
@@ -368,14 +346,13 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
     db.commit()
     db.refresh(mujer)
 
-    # Lógica de borrado de notificaciones (igual que antes)
-    if 'fecha_examen' in update_data:
-        if fecha_examen_anterior != mujer.fecha_examen:
-            deleted = db.query(NotificacionExamenEnviada).filter(
-                NotificacionExamenEnviada.mujer_id == mujer_id
-            ).delete()
-            db.commit()
-            print(f"Notificaciones antiguas eliminadas ({deleted}) para {mujer.nombre} al renovar examen")
+    # Borrar notificaciones antiguas si cambió la fecha de examen
+    if 'fecha_examen' in update_data and fecha_examen_anterior != mujer.fecha_examen:
+        deleted = db.query(NotificacionExamenEnviada).filter(
+            NotificacionExamenEnviada.mujer_id == mujer_id
+        ).delete()
+        db.commit()
+        print(f"Notificaciones antiguas eliminadas ({deleted}) para {mujer.nombre} al renovar examen")
 
     return mujer
 
@@ -383,8 +360,6 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
 def obtener_mujeres_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
     mujeres = db.query(Mujer).filter(Mujer.dueno_id == dueno_id).all()
     return mujeres
-# IMPORTACIÓN DE CLOUDINARY (asegúrate de tenerla arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
 
 @router.get("/buscar_usuario/{usuario_id}", response_model=dict)
 def obtener_nombre_por_id(usuario_id: int, db: Session = Depends(get_db)):
@@ -407,7 +382,7 @@ def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)):
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
     
-    # === NUEVO: Borrar foto de Cloudinary ===
+    # Borrar foto de Cloudinary
     if admin.foto:
         eliminar_imagen_de_cloudinary(admin.foto)
     
@@ -421,33 +396,27 @@ def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Sess
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
     
-    # Actualizar nombre
     if datos.nombre is not None and datos.nombre != admin.nombre:
         if db.query(Dueno).filter(Dueno.nombre == datos.nombre).first():
             raise HTTPException(status_code=400, detail="Ese nombre ya pertenece a un dueño")
         admin.nombre = datos.nombre
     
-    # Actualizar correo
     if datos.correo is not None and datos.correo != admin.correo:
         if db.query(Administrador).filter(Administrador.correo == datos.correo).filter(Administrador.id != admin_id).first():
             raise HTTPException(status_code=400, detail="Ese correo ya está registrado.")
         admin.correo = datos.correo
     
-    # ✅ Actualizar documento
     if datos.documento is not None and datos.documento != admin.documento:
         if db.query(Administrador).filter(Administrador.documento == datos.documento).filter(Administrador.id != admin_id).first():
             raise HTTPException(status_code=400, detail="Ese documento ya está registrado.")
         admin.documento = datos.documento
 
-    # Actualizar teléfono
     if datos.telefono is not None:
         admin.telefono = datos.telefono
         
-    # SUBIR FOTO DEL ADMINISTRADOR A CLOUDINARY (si se envía nueva foto)
     if datos.foto is not None:
         admin.foto = subir_imagen_a_cloudinary(datos.foto, carpeta="administradores")
 
-    # Actualizar contraseña
     if datos.contraseña is not None:
         hashed_password = pwd_context.hash(datos.contraseña)
         admin.contraseña = hashed_password
@@ -458,11 +427,7 @@ def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Sess
 
 @router.post("/tareas_crear", response_model=TareaOut)
 def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
-    """
-    Crea una nueva tarea y envía notificación por correo al administrador asignado.
-    """
     try:
-        # Buscar el administrador para obtener su correo y nombre
         administrador = db.query(Administrador).filter(
             Administrador.id == tarea.administrador_id
         ).first()
@@ -473,14 +438,12 @@ def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
                 detail=f"Administrador con ID {tarea.administrador_id} no encontrado"
             )
         
-        # Verificar que el administrador tenga correo
         if not administrador.correo:
             raise HTTPException(
                 status_code=400,
                 detail=f"El administrador {administrador.nombre} no tiene un correo registrado"
             )
         
-        # Obtener el nombre del bar y del dueño
         bar_nombre = None
         dueno_nombre = None
         
@@ -493,13 +456,11 @@ def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
                     if dueno:
                         dueno_nombre = dueno.nombre
         
-        # Crear la tarea en la base de datos
         nueva_tarea = Tarea(**tarea.dict())
         db.add(nueva_tarea)
         db.commit()
         db.refresh(nueva_tarea)
         
-        # Enviar el correo al administrador
         enviar_email_tarea(
             destinatario=administrador.correo,
             admin_nombre=administrador.nombre,
@@ -526,12 +487,9 @@ def obtener_tareas_por_admin(administrador_id: int, db: Session = Depends(get_db
     tareas = db.query(Tarea).filter(Tarea.administrador_id == administrador_id).all()
     return tareas
 
-@router.put("/tareas/{tarea_id}/completar", response_model=schemas.TareaOut)
-def completar_tarea(
-    tarea_id: int,
-    db: Session = Depends(get_db)
-):
-    tarea = db.query(modelos.Tarea).filter(modelos.Tarea.id == tarea_id).first()
+@router.put("/tareas/{tarea_id}/completar", response_model=TareaOut)
+def completar_tarea(tarea_id: int, db: Session = Depends(get_db)):
+    tarea = db.query(Tarea).filter(Tarea.id == tarea_id).first()
     if not tarea:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -556,21 +514,14 @@ def eliminar_tarea(tarea_id: int, db: Session = Depends(get_db)):
 def obtener_productos_por_bar(
     bar_id: int,
     db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0, description="Número de productos a saltar (offset)"),
-    limit: int = Query(20, gt=0, le=100, description="Número máximo de productos a devolver (límite por página)")
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, gt=0, le=100)
 ):
-    """
-    Obtiene una lista paginada de productos 'activos' de un bar específico.
-    """
     productos = db.query(Producto).filter(
         Producto.bar_id == bar_id,
         Producto.estado == 'activo'
     ).offset(skip).limit(limit).all()
-
     return productos
-
-# IMPORTACIÓN DE CLOUDINARY (asegúrate de tenerla arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
 
 @router.get("/tareas_pendientes_count/{admin_id}")
 async def get_tareas_pendientes_count(admin_id: int, db: Session = Depends(get_db)):
@@ -578,17 +529,15 @@ async def get_tareas_pendientes_count(admin_id: int, db: Session = Depends(get_d
         Tarea.administrador_id == admin_id,
         Tarea.estado == "pendiente"
     ).count()
-    
     return {"pendientes": count}
 
 @router.post("/crear_productos", response_model=ProductoOut)
 def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
-    # SUBIR IMAGEN DEL PRODUCTO A CLOUDINARY
     imagen_url = subir_imagen_a_cloudinary(producto.imagen, carpeta="productos")
 
     nuevo_producto = Producto(
         nombre=producto.nombre,
-        imagen=imagen_url,  # ← Guardamos URL de Cloudinary
+        imagen=imagen_url,
         cantidad=producto.cantidad,
         precio=producto.precio,
         bar_id=producto.bar_id,
@@ -614,21 +563,21 @@ def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
 
 @router.delete("/eliminar_producto/{producto_id}")
 def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
-    producto_a_eliminar = db.query(modelos.Producto).filter(modelos.Producto.id == producto_id).first()
+    producto_a_eliminar = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto_a_eliminar:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
     
-    # === NUEVO: Borrar imagen de Cloudinary ===
+    # Borrar imagen de Cloudinary
     if producto_a_eliminar.imagen:
         eliminar_imagen_de_cloudinary(producto_a_eliminar.imagen)
     
-    # 1. Marcar el producto como "eliminado"
+    # Marcar como eliminado
     producto_a_eliminar.estado = 'eliminado'
     db.commit()
     db.refresh(producto_a_eliminar)
     
-    # 2. Registrar la acción en el historial
-    mensaje_historial = f"Se eliminado el producto: {producto_a_eliminar.nombre}."
+    # Registrar en historial
+    mensaje_historial = f"Se eliminó el producto: {producto_a_eliminar.nombre}."
     tipo_historial = "elimino"
     agregar_a_historial(
         db=db,
@@ -638,8 +587,8 @@ def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
         tipo=tipo_historial
     )
     db.commit()
-   
-    return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' ha sido marcado como eliminado y su imagen borrada de la nube."}
+    
+    return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' marcado como eliminado y su imagen borrada de la nube."}
 from fastapi import HTTPException, status
 import logging
 
@@ -701,7 +650,7 @@ def actualizar_producto(
 
     update_data = producto_update.dict(exclude_unset=True)
     
-    # === DETECCIÓN Y REGISTRO BONITO DEL CAMBIO DE STOCK ===
+    # DETECCIÓN Y REGISTRO BONITO DEL CAMBIO DE STOCK
     if "cantidad" in update_data:
         nueva = update_data["cantidad"]
         anterior = producto_db.cantidad
@@ -746,7 +695,6 @@ def obtener_historial_por_bar(
     limit: int = Query(10, ge=1, le=100)
 ):
     historial_query = db.query(Historial).filter(Historial.bar_id == bar_id)
-
     historial_paginado = historial_query.order_by(desc(Historial.tiempo)).offset(skip).limit(limit).all()
 
     if not historial_paginado:
@@ -766,8 +714,6 @@ def get_productos_para_facturar(bar_id: int, db: Session = Depends(get_db)):
         return []
     
     return productos
-# IMPORTACIÓN DE CLOUDINARY (asegúrate de tenerla arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
 
 @router.post("/generar_factura", response_model=schemas.FacturaOut, status_code=status.HTTP_201_CREATED)
 def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = Depends(get_db)):    
@@ -812,12 +758,12 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
         
         total_ingresos += subtotal
         
-        # La imagen del producto ya está como URL de Cloudinary (o base64 antiguo)
+        # Imagen del producto (ya es URL de Cloudinary)
         detalles_para_email.append(schemas.DetalleFacturaOut(
             id=0,
             producto_id=db_producto.id,
             nombre_producto=db_producto.nombre,
-            imagen_producto=db_producto.imagen,  # ← Ya es URL o base64, funciona igual
+            imagen_producto=db_producto.imagen,
             cantidad_inicial=cantidad_inicial_producto,
             cantidad_final=item.cantidad_final,
             cantidad_vendida=cantidad_vendida,
@@ -935,7 +881,7 @@ def get_facturas_by_admin_and_bar(
                 "cantidad_final": detalle.cantidad_final,
                 "cantidad_vendida": detalle.cantidad_vendida,
                 "subtotal": detalle.subtotal,
-                "imagen_producto": detalle.producto.imagen if detalle.producto else None  # ← Ya es URL de Cloudinary
+                "imagen_producto": detalle.producto.imagen if detalle.producto else None
             }
             detalles.append(detalle_dict)
         
@@ -956,12 +902,11 @@ def get_facturas_by_admin_and_bar(
             "detalles_factura": detalles,
             "gastos": gastos,
             "admin_nombre": factura.administrador_rel.nombre,
-            "admin_foto": factura.administrador_rel.foto  # ← Ya es URL de Cloudinary
+            "admin_foto": factura.administrador_rel.foto
         }
         facturas_con_info.append(factura_dict)
 
     return facturas_con_info
-
 @router.post("/administradores", response_model=AdministradorOut)
 def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)):
     # 1. Verificar si el nombre ya pertenece a un Dueño
@@ -993,7 +938,7 @@ def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db
         nombre=admin.nombre,
         correo=admin.correo,
         documento=admin.documento,
-        foto=foto_url,  # ← Guardamos URL de Cloudinary
+        foto=foto_url,
         telefono=admin.telefono,
         contraseña=hashed_password,
         bar_id=admin.bar_id
@@ -1003,8 +948,6 @@ def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(nuevo_admin)
     return nuevo_admin
-# IMPORTACIÓN DE CLOUDINARY (asegúrate de tenerla arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
 
 @router.get("/bar_tipo/{bar_id}", response_model=BarOut)
 async def obtener_bar(bar_id: int, db: Session = Depends(get_db)):
@@ -1050,7 +993,7 @@ def get_facturas_by_bar(
                 "cantidad_final": detalle.cantidad_final,
                 "cantidad_vendida": detalle.cantidad_vendida,
                 "subtotal": detalle.subtotal,
-                "imagen_producto": detalle.producto.imagen if detalle.producto else None  # ← Ya es URL de Cloudinary
+                "imagen_producto": detalle.producto.imagen if detalle.producto else None
             }
             detalles.append(detalle_dict)
         
@@ -1071,7 +1014,7 @@ def get_facturas_by_bar(
             "detalles_factura": detalles,
             "gastos": gastos,
             "admin_nombre": factura.administrador_rel.nombre if factura.administrador_rel else "Desconocido",
-            "admin_foto": factura.administrador_rel.foto if factura.administrador_rel else None  # ← Ya es URL de Cloudinary
+            "admin_foto": factura.administrador_rel.foto if factura.administrador_rel else None
         }
         facturas_con_info.append(factura_dict)
 
@@ -1083,12 +1026,7 @@ def verificar_existencia_dueno(db: Session = Depends(get_db)):
     Verifica si existe al menos un dueño en la base de datos.
     """
     dueno = db.query(Dueno).first()
-    
-    if dueno:
-        return {"existe_dueno": True}
-    else:
-        return {"existe_dueno": False}
-    
+    return {"existe_dueno": bool(dueno)}
 
 @router.put("/dueno/{dueno_id}", response_model=schemas.DuenoOut)
 def update_dueno_data(
@@ -1098,14 +1036,12 @@ def update_dueno_data(
 ):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dueño no encontrado"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dueño no encontrado")
 
-    db_dueno.nombre = dueno_update.nombre
-    db_dueno.telefono = dueno_update.telefono
-    db_dueno.correo = dueno_update.correo
+    update_data = dueno_update.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        if key in ["nombre", "telefono", "correo"]:
+            setattr(db_dueno, key, value)
     
     db.commit()
     db.refresh(db_dueno)
@@ -1119,13 +1055,10 @@ def update_dueno_password(
 ):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dueño no encontrado"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dueño no encontrado")
+    
     hashed_password = pwd_context.hash(password_data.new_password)
     db_dueno.contraseña = hashed_password
-
     db.commit()
     return {"message": "Contraseña actualizada exitosamente"}
 
@@ -1137,16 +1070,10 @@ def update_dueno_photo(
 ):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dueño no encontrado"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dueño no encontrado")
     
-    # SUBIR NUEVA FOTO DEL DUEÑO A CLOUDINARY
     foto_url = subir_imagen_a_cloudinary(photo_data.photo_url, carpeta="duenos")
-    
     db_dueno.imagen = foto_url
-    
     db.commit()
     db.refresh(db_dueno)
     return {"message": "Imagen de perfil actualizada exitosamente", "photoUrl": db_dueno.imagen}
@@ -1167,7 +1094,6 @@ def send_email(to_email: str, subject: str, html_content: str):
         msg['From'] = email_user
         msg['To'] = to_email
         msg['Subject'] = subject
-
         msg.attach(MIMEText(html_content, 'html'))
 
         with smtplib.SMTP(email_host, email_port) as server:
@@ -1186,23 +1112,11 @@ def verify_dueno_password(
     password_data: schemas.PasswordCheck,
     db: Session = Depends(get_db)
 ):
-    """
-    Verifica la contraseña actual del dueño.
-    """
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
-    
     if not db_dueno:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Dueño no encontrado"
-        )
-
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dueño no encontrado")
     if not pwd_context.verify(password_data.password, db_dueno.contraseña):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Contraseña incorrecta"
-        )
-
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Contraseña incorrecta")
     return {"message": "Contraseña verificada exitosamente"}
 
 @router.post("/historial/bar/{bar_id}/eliminar-y-enviar-email", status_code=status.HTTP_200_OK)
@@ -1233,11 +1147,7 @@ async def delete_history_and_send_email_endpoint(bar_id: int, db: Session = Depe
 
 @router.post("/dueno/forgot-password")
 def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
-    """
-    Busca al dueño por su correo, genera un token numérico y lo envía por email.
-    """
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.correo == request.correo).first()
-
     if not db_dueno:
         return {"message": "Si el correo está registrado, recibirás un código para restablecer tu contraseña."}
 
@@ -1264,53 +1174,13 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Recuperación de Contraseña</title>
         <style>
-            body {{
-                font-family: sans-serif;
-                background-color: #f4f4f4;
-                color: #333;
-                margin: 0;
-                padding: 0;
-            }}
-            .container {{
-                max-width: 600px;
-                margin: 20px auto;
-                background-color: #ffffff;
-                border-radius: 10px;
-                overflow: hidden;
-                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            }}
-            .header {{
-                background-color: #000000;
-                color: #ffffff;
-                padding: 20px;
-                text-align: center;
-            }}
-            .content {{
-                padding: 30px;
-                text-align: center;
-                color: #000000;
-            }}
-            .code-box {{
-                background-color: #ff69b4;
-                color: #ffffff;
-                padding: 15px 30px;
-                margin: 25px 0;
-                font-size: 32px;
-                font-weight: bold;
-                border-radius: 8px;
-                display: inline-block;
-                letter-spacing: 5px;
-            }}
-            .footer {{
-                background-color: #000000;
-                color: #ffffff;
-                padding: 20px;
-                text-align: center;
-                font-size: 12px;
-            }}
-            h2 {{
-                color: #ff69b4;
-            }}
+            body {{ font-family: sans-serif; background-color: #f4f4f4; color: #333; margin: 0; padding: 0; }}
+            .container {{ max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1); }}
+            .header {{ background-color: #000000; color: #ffffff; padding: 20px; text-align: center; }}
+            .content {{ padding: 30px; text-align: center; color: #000000; }}
+            .code-box {{ background-color: #ff69b4; color: #ffffff; padding: 15px 30px; margin: 25px 0; font-size: 32px; font-weight: bold; border-radius: 8px; display: inline-block; letter-spacing: 5px; }}
+            .footer {{ background-color: #000000; color: #ffffff; padding: 20px; text-align: center; font-size: 12px; }}
+            h2 {{ color: #ff69b4; }}
         </style>
     </head>
     <body>
@@ -1321,13 +1191,11 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
             <div class="content">
                 <h2>Hola {db_dueno.nombre},</h2>
                 <p>Hemos recibido una solicitud para restablecer tu contraseña. Usa el siguiente código numérico:</p>
-                <div class="code-box">
-                    {reset_code}
-                </div>
+                <div class="code-box">{reset_code}</div>
                 <p>Este código es válido por 15 minutos. Si no solicitaste este cambio, por favor ignora este correo.</p>
             </div>
             <div class="footer">
-                <p> Control AS. Todos los derechos reservados.</p>
+                <p>Control AS. Todos los derechos reservados.</p>
             </div>
         </div>
     </body>
@@ -1343,14 +1211,9 @@ def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depend
 
 @router.post("/dueno/reset-password")
 def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
-    """
-    Verifica el token y actualiza la contraseña del dueño.
-    """
     db_token = db.query(modelos.PasswordResetToken).filter(modelos.PasswordResetToken.token == request.token).first()
-
     if not db_token:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Código inválido.")
-
     if db_token.expires_at < datetime.now():
         db.delete(db_token)
         db.commit()
@@ -1363,25 +1226,17 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     hashed_password = pwd_context.hash(request.nueva_contraseña)
     db_dueno.contraseña = hashed_password
     db.commit()
-
     db.delete(db_token)
     db.commit()
 
     return {"message": "Contraseña actualizada exitosamente."}
-# IMPORTACIONES DE CLOUDINARY (asegúrate de tenerlas arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary, subir_pdf_a_cloudinary
-from fastapi.responses import RedirectResponse  # ← NUEVA para redirigir a la URL del PDF
 
 @router.delete("/bares/{bar_id}/facturas")
-def delete_all_bar_invoices(
-    bar_id: int,
-    db: Session = Depends(get_db)
-):
+def delete_all_bar_invoices(bar_id: int, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
     if not bar:
         raise HTTPException(status_code=404, detail=f"Bar con ID {bar_id} no encontrado.")
 
-    # 1. Borrar primero los hijos (detalles y gastos) - evita error de FK
     db.query(DetalleFactura).filter(
         DetalleFactura.factura_id.in_(
             db.query(Factura.id).filter(Factura.bar_id == bar_id)
@@ -1394,16 +1249,13 @@ def delete_all_bar_invoices(
         )
     ).delete(synchronize_session=False)
 
-    # 2. Ahora sí borrar las facturas
     db.query(Factura).filter(Factura.bar_id == bar_id).delete(synchronize_session=False)
 
-    # 3. Borrar productos en estado eliminado (y su historial por cascade)
     db.query(Producto).filter(
         Producto.bar_id == bar_id,
         Producto.estado == "eliminado"
     ).delete(synchronize_session=False)
 
-    # 4. Borrar registros de productos_eliminados
     db.query(ProductoEliminado).filter(ProductoEliminado.bar_id == bar_id).delete(synchronize_session=False)
 
     db.commit()
@@ -1412,7 +1264,6 @@ def delete_all_bar_invoices(
         "mensaje": "Limpieza completa realizada: facturas, detalles, gastos, productos eliminados y backup borrados."
     }
 
-# Las funciones de limpieza mensual y notificaciones no manejan imágenes → quedan exactamente iguales
 from dateutil.relativedelta import relativedelta
 
 def chequear_y_notificar_examenes_vencidos():
@@ -1421,7 +1272,6 @@ def chequear_y_notificar_examenes_vencidos():
     
     try:
         fecha_limite = hoy - relativedelta(months=6)
-
         mujeres_vencidas = db.query(Mujer).filter(
             Mujer.fecha_examen.is_not(None),
             Mujer.fecha_examen < fecha_limite
@@ -1522,13 +1372,11 @@ def chequear_y_notificar_examenes_vencidos():
             """
 
             send_email(dueno.correo, subject, html)
-
             db.add(NotificacionExamenEnviada(
                 mujer_id=mujer.id,
                 fecha_vencimiento_notificada=mujer.fecha_examen
             ))
             db.commit()
-
             print(f"[ALERTA] Correo CRÍTICO enviado → {mujer.nombre} | {dias_vencido} días vencida")
 
     except Exception as e:
@@ -1538,11 +1386,6 @@ def chequear_y_notificar_examenes_vencidos():
         db.close()
 
 def limpiar_facturas_y_productos_eliminados_mensual():
-    """
-    Se ejecuta automáticamente el día 1 de cada mes a las 3:15 AM
-    Borra facturas, detalles, gastos, productos eliminados y su backup
-    para TODOS los bares → SIN enviar ningún correo
-    """
     db: Session = next(get_db())
     try:
         bares = db.query(modelos.Bar).all()
@@ -1570,7 +1413,6 @@ def limpiar_facturas_y_productos_eliminados_mensual():
             db.query(modelos.ProductoEliminado).filter(modelos.ProductoEliminado.bar_id == bar.id).delete(synchronize_session=False)
 
             db.commit()
-
             print(f"[{datetime.now()}] Limpieza mensual automática completada → {bar.nombre} (ID: {bar.id})")
 
     except Exception as e:
@@ -1578,7 +1420,6 @@ def limpiar_facturas_y_productos_eliminados_mensual():
         print(f"ERROR en limpieza mensual automática: {e}")
     finally:
         db.close()
-
 def limpiar_tareas_completadas_mensual():
     db: Session = next(get_db())
     try:
@@ -1673,7 +1514,7 @@ async def guardar_inventario_con_factura(
     import json
     import base64
 
-    # === VALIDAR PERMISOS ===
+    # VALIDAR PERMISOS
     administrador_id = None
     dueno_id = None
 
@@ -1691,7 +1532,7 @@ async def guardar_inventario_con_factura(
             raise HTTPException(status_code=403, detail="Dueño no autorizado")
         dueno_id = usuario_id
 
-    # === SUBIR PDF DE FACTURA A CLOUDINARY ===
+    # SUBIR PDF DE FACTURA A CLOUDINARY
     pdf_url = None
     nombre_archivo = None
     mime_type = "application/pdf"
@@ -1705,14 +1546,14 @@ async def guardar_inventario_con_factura(
             nombre_archivo = pdf_info["nombre"]
             mime_type = pdf_info["mime_type"]
 
-    # === DETERMINAR TIPO ===
+    # DETERMINAR TIPO
     tipo_op = "aumento_stock"
     if nuevos and not aumentos:
         tipo_op = "nuevos_productos"
     elif nuevos and aumentos:
         tipo_op = "ambos"
     
-    # === CREAR FACTURA INVENTARIO ===
+    # CREAR FACTURA INVENTARIO
     now_colombia = datetime.now(COLOMBIA_TZ)
     
     nueva_factura_inv = FacturaInventario(
@@ -1720,17 +1561,17 @@ async def guardar_inventario_con_factura(
         administrador_id=administrador_id,
         dueno_id=dueno_id,
         tipo_operacion=tipo_op,
-        archivo_factura=None,  # ← Ya no guardamos binario en BD
+        archivo_factura=None,
         nombre_archivo=nombre_archivo,
         mime_type=mime_type,
-        observaciones=pdf_url,  # ← Guardamos la URL del PDF aquí
+        observaciones=pdf_url,
         fecha=now_colombia.date(),
         hora=now_colombia
     )
     db.add(nueva_factura_inv)
     db.flush()
 
-    # === PROCESAR AUMENTOS ===
+    # PROCESAR AUMENTOS
     if aumentos:
         try:
             lista_aumentos = json.loads(aumentos)
@@ -1756,7 +1597,7 @@ async def guardar_inventario_con_factura(
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Error procesando aumentos: {str(e)}")
 
-    # === PROCESAR PRODUCTOS NUEVOS CON IMÁGENES ===
+    # PROCESAR PRODUCTOS NUEVOS CON IMÁGENES
     if nuevos:
         try:
             lista_nuevos = json.loads(nuevos)
@@ -1777,10 +1618,9 @@ async def guardar_inventario_con_factura(
                     imagen_bytes = await imagen_file.read()
                     content_type = imagen_file.content_type or 'image/jpeg'
                     
-                    # Convertir a base64 temporalmente para subir a Cloudinary
                     imagen_base64 = f"data:{content_type};base64,{base64.b64encode(imagen_bytes).decode('utf-8')}"
                     
-                    # SUBIR A CLOUDINARY
+                    # SUBIR A CLOUDINARY (carpeta productos)
                     imagen_url_nueva = subir_imagen_a_cloudinary(imagen_base64, carpeta="productos")
                 else:
                     print(f"⚠️ No se encontró imagen para índice {index}")
@@ -1789,7 +1629,7 @@ async def guardar_inventario_con_factura(
                     nombre=item['nombre'],
                     precio=float(item['precio']),
                     cantidad=int(item['cantidad']),
-                    imagen=imagen_url_nueva,  # ← Guardamos URL de Cloudinary
+                    imagen=imagen_url_nueva,
                     bar_id=bar_id,
                     estado='activo'
                 )
@@ -1800,7 +1640,7 @@ async def guardar_inventario_con_factura(
                     factura_inventario_id=nueva_factura_inv.id,
                     producto_id=nuevo_prod.id,
                     nombre_producto=item['nombre'],
-                    imagen_producto=imagen_url_nueva,  # ← URL de Cloudinary
+                    imagen_producto=imagen_url_nueva,
                     cantidad=int(item['cantidad']),
                     precio_unitario=float(item['precio']),
                     es_nuevo_producto=True
@@ -1832,15 +1672,12 @@ async def guardar_inventario_con_factura(
         "mensaje": "Inventario actualizado con éxito",
         "factura_inventario_id": nueva_factura_inv.id
     }
-# IMPORTACIONES DE CLOUDINARY (asegúrate de tenerlas arriba con las demás)
-from app.cloudinary_utils import subir_imagen_a_cloudinary
-from fastapi.responses import RedirectResponse  # ← Para redirigir a la URL del PDF
+
+from fastapi.responses import RedirectResponse
 
 def create_tables_and_seed_data():
     """Crea la tabla GestorPrincipal y añade el usuario por defecto."""
     
-    # Base.metadata.create_all(bind=engine) # NO hace falta aquí, ya se llama en main.py
-
     with Session(engine) as session:
         gestor_existente = session.query(GestorPrincipal).filter(
             GestorPrincipal.correo == "barrantessebastian261@gmail.com"
@@ -1859,7 +1696,7 @@ def create_tables_and_seed_data():
             
             session.add(gestor_principal)
             session.commit()
-            print("Gestor Principal creado exitosamente.")  
+            print("Gestor Principal creado exitosamente.")
 
 @router.post("/gestor_principal/login", response_model=GestorPrincipalLoginResponse, tags=["Gestores Principales"])
 def login_gestor_principal(request: GestorPrincipalLoginRequest, db: Session = Depends(get_db)):

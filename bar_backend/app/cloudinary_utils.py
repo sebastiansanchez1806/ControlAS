@@ -1,10 +1,12 @@
-# app/cloudinary_utils.py - VERSIÓN CON LOGS DETALLADOS
+# app/cloudinary_utils.py - VERSIÓN FINAL OPTIMIZADA
 import cloudinary
 import cloudinary.uploader
+import cloudinary.api
 import base64
 from io import BytesIO
 
-# ✅ CONFIGURAR CLOUDINARY
+# ✅ CONFIGURACIÓN CENTRALIZADA DE CLOUDINARY
+# (Ya no se duplica, se carga una sola vez)
 cloudinary.config(
     cloud_name="dymgfvafu",
     api_key="784682236934985",
@@ -12,77 +14,80 @@ cloudinary.config(
     secure=True
 )
 
-def subir_imagen_a_cloudinary(imagen_base64: str, carpeta: str = "controlas") -> str:
+def subir_imagen_a_cloudinary(imagen_base64: str, carpeta: str = "otros") -> str:
     """
-    Sube una imagen en base64 a Cloudinary y devuelve la URL pública.
-    Si ya es una URL externa, la devuelve tal cual.
+    Sube una imagen en base64 a Cloudinary dentro de la carpeta 'controlas/[carpeta]'.
+    Si ya es una URL, la devuelve tal cual.
+    Default: carpeta "otros" si no se especifica.
     """
-    print(f"\n{'='*60}")
-    print(f"🔍 SUBIR IMAGEN A CLOUDINARY - Carpeta: {carpeta}")
-    print(f"{'='*60}")
-    
+    print(f"\n{'='*70}")
+    print(f"☁️ SUBIENDO IMAGEN A CLOUDINARY")
+    print(f"📁 Carpeta solicitada: {carpeta}")
+    print(f"{'='*70}")
+
     if not imagen_base64:
-        print("⚠️ NO SE RECIBIÓ IMAGEN (None o vacío)")
+        print("⚠️ IMAGEN VACÍA O NONE → Retornando None")
         return None
-    
-    # Log del tamaño
-    print(f"📏 Tamaño recibido: {len(imagen_base64)} caracteres")
-    print(f"🔍 Primeros 60 caracteres: {imagen_base64[:60]}...")
-    
-    # Si ya es una URL (ya subida antes o externa), no subir de nuevo
-    if imagen_base64.startswith("http") or imagen_base64.startswith("https"):
-        print(f"↩️ YA ES UNA URL - No se sube de nuevo")
-        print(f"🔗 URL: {imagen_base64}")
+
+    print(f"📏 Longitud base64: {len(imagen_base64)} caracteres")
+    print(f"🔍 Inicio: {imagen_base64[:60]}...")
+
+    # Si ya es URL de Cloudinary o externa → no subir
+    if imagen_base64.startswith("http"):
+        print(f"↩️ YA ES UNA URL → No se sube")
+        print(f"🔗 URL existente: {imagen_base64}")
         return imagen_base64
-    
+
+    # Forzar carpeta dentro de controlas/
+    carpeta_final = carpeta.strip() if carpeta else "otros"
+    folder_path = f"controlas/{carpeta_final}"
+
     try:
-        print(f"☁️ Subiendo a Cloudinary...")
-        print(f"📁 Carpeta destino: controlas/{carpeta}")
-        
+        print(f"🚀 Subiendo a: {folder_path}")
         resultado = cloudinary.uploader.upload(
             imagen_base64,
-            folder=f"controlas/{carpeta}",
+            folder=folder_path,
             use_filename=True,
-            unique_filename=True,  # ← Cambiado a True para evitar sobrescrituras
-            overwrite=False,        # ← No sobrescribir archivos existentes
+            unique_filename=True,   # Evita nombres duplicados
+            overwrite=False,        # No sobrescribe si ya existe (seguro)
             resource_type="image"
         )
-        
+
         url_final = resultado["secure_url"]
-        
-        print(f"✅ SUBIDA EXITOSA")
+        public_id = resultado.get("public_id", "N/A")
+
+        print(f"✅ ¡SUBIDA EXITOSA!")
         print(f"🔗 URL: {url_final}")
-        print(f"📦 Public ID: {resultado.get('public_id', 'N/A')}")
+        print(f"📦 Public ID: {public_id}")
         print(f"📏 Tamaño: {resultado.get('bytes', 0) / 1024:.2f} KB")
-        print(f"{'='*60}\n")
-        
+        print(f"{'='*70}\n")
+
         return url_final
-        
+
     except Exception as e:
-        print(f"❌ ERROR SUBIENDO A CLOUDINARY:")
+        print(f"❌ ERROR AL SUBIR IMAGEN:")
         print(f"   Tipo: {type(e).__name__}")
         print(f"   Mensaje: {str(e)}")
-        print(f"⚠️ FALLBACK: Guardando base64 original")
-        print(f"{'='*60}\n")
-        return imagen_base64  # Fallback: devuelve el base64 original
+        print(f"⚠️ FALLBACK → Guardando base64 original")
+        print(f"{'='*70}\n")
+        return imagen_base64
+
 
 def subir_pdf_a_cloudinary(archivo_binario: bytes, nombre_archivo: str) -> dict:
     """
-    Sube un PDF binario a Cloudinary y devuelve info con URL
+    Sube un PDF a la carpeta controlas/facturas_inventario
     """
-    print(f"\n{'='*60}")
-    print(f"📄 SUBIR PDF A CLOUDINARY - Archivo: {nombre_archivo}")
-    print(f"{'='*60}")
-    
+    print(f"\n{'='*70}")
+    print(f"📄 SUBIENDO PDF: {nombre_archivo}")
+    print(f"{'='*70}")
+
     if not archivo_binario:
-        print("⚠️ NO SE RECIBIÓ ARCHIVO (None o vacío)")
+        print("⚠️ ARCHIVO VACÍO → Retornando None")
         return None
-    
-    print(f"📏 Tamaño del PDF: {len(archivo_binario) / 1024:.2f} KB")
-    
+
+    print(f"📏 Tamaño: {len(archivo_binario) / 1024:.2f} KB")
+
     try:
-        print(f"☁️ Subiendo PDF...")
-        
         resultado = cloudinary.uploader.upload(
             archivo_binario,
             folder="controlas/facturas_inventario",
@@ -90,78 +95,61 @@ def subir_pdf_a_cloudinary(archivo_binario: bytes, nombre_archivo: str) -> dict:
             resource_type="raw",
             overwrite=True
         )
-        
+
         url_final = resultado["secure_url"]
-        
-        print(f"✅ PDF SUBIDO EXITOSAMENTE")
+
+        print(f"✅ PDF SUBIDO CORRECTAMENTE")
         print(f"🔗 URL: {url_final}")
-        print(f"{'='*60}\n")
-        
+        print(f"{'='*70}\n")
+
         return {
             "url": url_final,
             "nombre": nombre_archivo,
             "mime_type": "application/pdf"
         }
-        
+
     except Exception as e:
         print(f"❌ ERROR SUBIENDO PDF:")
         print(f"   Tipo: {type(e).__name__}")
         print(f"   Mensaje: {str(e)}")
-        print(f"{'='*60}\n")
+        print(f"{'='*70}\n")
         return None
 
-# === PRUEBA DE CONEXIÓN (ejecutar al importar el módulo) ===
-print("\n" + "="*60)
-print("🔍 Probando conexión con Cloudinary...")
-print("="*60)
-try:
-    test = cloudinary.uploader.upload(
-        "https://upload.wikimedia.org/wikipedia/commons/a/ae/Olympic_flag.jpg",
-        folder="controlas/prueba"
-    )
-    print(f"✅ ¡Cloudinary conectado correctamente!")
-    print(f"🔗 URL de prueba: {test['secure_url']}")
-    print("="*60 + "\n")
-except Exception as e:
-    print(f"⚠️ ADVERTENCIA: No se pudo conectar con Cloudinary")
-    print(f"❌ Error: {e}")
-    print("El sistema usará almacenamiento base64 como respaldo")
-    print("="*60 + "\n")
-
-
-import cloudinary.api
 
 def eliminar_imagen_de_cloudinary(url_imagen: str) -> bool:
-
-    if not url_imagen or not url_imagen.startswith("https://res.cloudinary.com"):
-        print("⚠️ No es una URL de Cloudinary o está vacía → no se intenta borrar")
+    """
+    Elimina una imagen de Cloudinary usando su URL pública.
+    Devuelve True si se borró, False si no existía o error.
+    """
+    if not url_imagen or not url_imagen.startswith("https://res.cloudinary.com/dymgfvafu"):
+        print(f"⚠️ URL no válida para borrado: {url_imagen[:60] if url_imagen else 'None'}...")
         return False
-    
-    try:
 
+    try:
+        # Extraer public_id de la URL
         partes = url_imagen.split("/upload/")
         if len(partes) < 2:
-            print("⚠️ URL no tiene formato esperado")
+            print("⚠️ Formato de URL inesperado")
             return False
-        
-        public_id_con_extension = partes[1]  # v1234567890/controlas/bares/mi_bar.jpg
-        public_id = public_id_con_extension.split("?")[0]  # por si tiene parámetros
-        public_id = public_id.rsplit(".", 1)[0]  # quitar extensión .jpg
-        
-        print(f"🗑️ Intentando eliminar de Cloudinary: {public_id}")
-        
+
+        public_id_con_version = partes[1]
+        public_id = public_id_con_version.split("?")[0]  # Quitar parámetros
+        public_id = public_id.rsplit(".", 1)[0]  # Quitar extensión
+
+        print(f"🗑️ Eliminando imagen: {public_id}")
+
         resultado = cloudinary.uploader.destroy(public_id, resource_type="image")
-        
+
         if resultado.get("result") == "ok":
-            print(f"✅ Imagen eliminada exitosamente: {public_id}")
+            print(f"✅ Imagen borrada exitosamente: {public_id}")
             return True
         elif resultado.get("result") == "not found":
-            print(f"ℹ️ Imagen no encontrada en Cloudinary (ya eliminada o nunca existió): {public_id}")
+            print(f"ℹ️ Imagen ya no existía: {public_id}")
             return False
         else:
             print(f"⚠️ Respuesta inesperada: {resultado}")
             return False
-            
+
     except Exception as e:
-        print(f"❌ Error eliminando imagen de Cloudinary: {e}")
+        print(f"❌ Error borrando imagen: {e}")
         return False
