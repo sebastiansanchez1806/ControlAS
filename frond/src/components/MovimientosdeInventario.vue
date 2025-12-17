@@ -8,7 +8,7 @@
     <!-- BUSCADOR -->
     <div class="search-section">
       <div class="search-container">
-        <input 
+        <input
           v-model="searchQuery"
           type="text"
           placeholder="Buscar por ID de factura o fecha (YYYY-MM-DD)..."
@@ -34,9 +34,9 @@
     </div>
 
     <div v-else class="facturas-list">
-      <div 
-        v-for="factura in (searchQuery ? facturasFiltradas : facturas)" 
-        :key="factura.id" 
+      <div
+        v-for="factura in (searchQuery ? facturasFiltradas : facturas)"
+        :key="factura.id"
         class="factura-card"
         @click="verDetalle(factura)"
       >
@@ -48,7 +48,6 @@
             </span>
           </div>
           <div class="factura-fecha">
-            <!-- HORA CORREGIDA CON ZONA COLOMBIA -->
             <span class="fecha-hora">{{ formatDateTime(factura.fecha, factura.hora) }}</span>
           </div>
         </div>
@@ -104,7 +103,6 @@
         <div class="detalle-info">
           <div class="info-row">
             <span class="label">📅 Fecha y hora:</span>
-            <!-- HORA CORREGIDA CON ZONA COLOMBIA EN EL MODAL -->
             <span class="value">{{ formatDateTime(facturaSeleccionada.fecha, facturaSeleccionada.hora) }}</span>
           </div>
           <div class="info-row">
@@ -118,8 +116,8 @@
           <div class="productos-detalle-scroll">
             <div v-for="detalle in detallesAumentos" :key="detalle.id" class="producto-detalle-item">
               <div class="producto-imagen-container">
-                <img 
-                  :src="detalle.imagen_producto || 'https://via.placeholder.com/60'" 
+                <img
+                  :src="detalle.imagen_producto || 'https://via.placeholder.com/60'"
                   :alt="detalle.nombre_producto"
                   class="producto-imagen"
                   @error="handleImageError"
@@ -143,8 +141,8 @@
           <div class="productos-detalle-scroll">
             <div v-for="detalle in detallesNuevos" :key="detalle.id" class="producto-detalle-item nuevo">
               <div class="producto-imagen-container">
-                <img 
-                  :src="detalle.imagen_producto || 'https://via.placeholder.com/60'" 
+                <img
+                  :src="detalle.imagen_producto || 'https://via.placeholder.com/60'"
                   :alt="detalle.nombre_producto"
                   class="producto-imagen"
                   @error="handleImageError"
@@ -202,7 +200,6 @@ const facturas = ref([])
 const facturaSeleccionada = ref(null)
 const detallesAumentos = ref([])
 const detallesNuevos = ref([])
-
 const hasMore = ref(true)
 const lastId = ref(null)
 
@@ -210,7 +207,7 @@ const lastId = ref(null)
 const searchQuery = ref('')
 const facturasFiltradas = computed(() => {
   if (!searchQuery.value) return facturas.value
-  
+ 
   const query = searchQuery.value.toLowerCase()
   return facturas.value.filter(f => {
     const idMatch = f.id.toString().includes(query)
@@ -221,14 +218,14 @@ const facturasFiltradas = computed(() => {
 
 onMounted(async () => {
   console.log('Bar ID del store:', activeBarStore.id)
-  
+ 
   if (!activeBarStore.id) {
     console.error('No hay bar seleccionado en el store')
     alert('Error: No se detectó el bar. Por favor selecciona un bar primero.')
     loading.value = false
     return
   }
-  
+ 
   await cargarFacturas()
   agregarScrollListener()
 })
@@ -239,10 +236,10 @@ onUnmounted(() => {
 
 const handleScroll = () => {
   if (loadingMore.value || !hasMore.value || loading.value) return
-
-  const cercaDelFinal = 
+  
+  const cercaDelFinal =
     window.innerHeight + window.scrollY >= document.body.offsetHeight - 1200
-
+  
   if (cercaDelFinal) {
     cargarFacturas()
   }
@@ -254,7 +251,7 @@ const agregarScrollListener = () => {
 
 async function cargarFacturas() {
   if (!hasMore.value || loadingMore.value) return
-
+  
   if (facturas.value.length === 0) {
     loading.value = true
   } else {
@@ -263,23 +260,23 @@ async function cargarFacturas() {
 
   try {
     console.log('Cargando facturas... lastId:', lastId.value)
-
+    
     let url = `${API_BASE_URL}/inventario/facturas/${activeBarStore.id}?limit=20`
     if (lastId.value !== null) {
       url += `&last_id=${lastId.value}`
     }
 
     const res = await fetch(url)
-    
+   
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error del servidor:', errorText)
       throw new Error('Error al cargar facturas')
     }
-    
+   
     const data = await res.json()
     console.log('Facturas recibidas:', data.length)
-
+    
     if (data.length === 0) {
       hasMore.value = false
       return
@@ -291,7 +288,6 @@ async function cargarFacturas() {
     if (data.length < 20) {
       hasMore.value = false
     }
-
   } catch (error) {
     console.error('Error cargando facturas:', error)
     alert('No se pudieron cargar más facturas')
@@ -314,21 +310,21 @@ async function verDetalle(factura) {
 async function cargarDetalles(facturaId) {
   try {
     console.log('Cargando detalles de factura:', facturaId)
-    
+   
     const res = await fetch(`${API_BASE_URL}/inventario/factura/${facturaId}/detalles`)
-    
+   
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error cargando detalles:', errorText)
       throw new Error('Error al cargar detalles')
     }
-    
+   
     const data = await res.json()
     console.log('Detalles recibidos:', data.length, 'productos')
-    
+   
     detallesAumentos.value = data.filter(d => !d.es_nuevo_producto)
     detallesNuevos.value = data.filter(d => d.es_nuevo_producto)
-    
+   
   } catch (error) {
     console.error('Error cargando detalles:', error)
     alert('No se pudieron cargar los detalles de la factura')
@@ -344,15 +340,15 @@ function cerrarDetalle() {
 async function descargarFactura() {
   try {
     console.log('Descargando factura:', facturaSeleccionada.value.id)
-    
+   
     const res = await fetch(`${API_BASE_URL}/inventario/factura/${facturaSeleccionada.value.id}/descargar`)
-    
+   
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error descargando:', errorText)
       throw new Error('Error al descargar')
     }
-    
+   
     const blob = await res.blob()
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -362,7 +358,7 @@ async function descargarFactura() {
     a.click()
     window.URL.revokeObjectURL(url)
     document.body.removeChild(a)
-    
+   
     console.log('Factura descargada exitosamente')
   } catch (error) {
     console.error('Error descargando factura:', error)
@@ -375,48 +371,65 @@ function handleImageError(e) {
   e.target.src = 'https://via.placeholder.com/60?text=Sin+Imagen'
 }
 
-// === FUNCIÓN NUEVA: FORMATEA FECHA + HORA EN ZONA COLOMBIA ===
-function formatDateTime(fechaISO, horaISO) {
-  if (!fechaISO || !horaISO) {
+// === FUNCIÓN CORREGIDA: FORMATEA FECHA + HORA ===
+function formatDateTime(fechaISO, horaString) {
+  if (!fechaISO) {
     return 'Fecha no disponible'
   }
 
-  // Limpiamos la hora: quitamos milisegundos si los hay y aseguramos formato correcto
-  let horaLimpia = horaISO.split('.')[0]  // Quita .123456 si existe
-  if (horaLimpia.length === 5) {
-    horaLimpia = horaLimpia + ':00'  // Si viene "13:30" → "13:30:00"
-  } else if (horaLimpia.length === 8) {
-    // Ya está en formato HH:mm:ss → perfecto
-  } else {
-    // Caso raro, fallback
-    horaLimpia = '00:00:00'
+  try {
+    // Si viene separado (fecha YYYY-MM-DD y hora HH:MM o HH:MM:SS)
+    if (horaString && typeof horaString === 'string') {
+      // Asegurar formato completo HH:MM:SS
+      let horaLimpia = horaString.split('.')[0] // Quita milisegundos
+      
+      // Si viene sin segundos, agregarlos
+      if (horaLimpia.length === 5) { // HH:MM
+        horaLimpia = horaLimpia + ':00'
+      }
+      
+      // Construir fecha completa
+      const dateTimeString = `${fechaISO}T${horaLimpia}`
+      const date = new Date(dateTimeString)
+      
+      if (isNaN(date.getTime())) {
+        return 'Fecha inválida'
+      }
+
+      const options = {
+        timeZone: 'America/Bogota',
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true
+      }
+
+      return date.toLocaleString('es-CO', options).replace(',', ' -')
+    }
+    
+    // Si solo viene la fecha
+    const date = new Date(fechaISO)
+    
+    if (isNaN(date.getTime())) {
+      return 'Fecha inválida'
+    }
+
+    const options = {
+      timeZone: 'America/Bogota',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }
+
+    return date.toLocaleString('es-CO', options)
+    
+  } catch (error) {
+    console.error('Error formateando fecha:', error, { fechaISO, horaString })
+    return 'Fecha no disponible'
   }
-
-  // Construimos la fecha completa
-  const dateTimeString = `${fechaISO}T${horaLimpia}`
-
-  const date = new Date(dateTimeString)
-
-  // Si por algún motivo falla, devolvemos algo legible
-  if (isNaN(date.getTime())) {
-    return 'Fecha inválida'
-  }
-
-  const options = {
-    timeZone: 'America/Bogota',
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  }
-
-  return date.toLocaleString('es-CO', options).replace(', ', ' - ')
 }
-
-// === FUNCIÓN ANTIGUA ELIMINADA (ya no se usa) ===
-// No necesitas formatDate() separada
 
 function formatPrice(price) {
   return `$${Number(price || 0).toLocaleString('es-CO')} COP`
@@ -439,7 +452,14 @@ function getTipoBadgeClass(tipo) {
   }
   return classes[tipo] || ''
 }
+
+function verPreviewImagen(url) {
+  if (url) {
+    window.open(url, '_blank')
+  }
+}
 </script>
+
 
 <style scoped>
 * {
