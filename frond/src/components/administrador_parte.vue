@@ -13,7 +13,6 @@
             <h1 class="logo-title" :class="{ 'glitch-active': isGlitching }" data-text="Control AS">
               {{ admin.bar_nombre }}
             </h1>
-            <p class="role">ID LOCAL: {{ admin.id }}</p>
           </div>
         </div>
 

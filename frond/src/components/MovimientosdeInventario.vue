@@ -48,8 +48,8 @@
             </span>
           </div>
           <div class="factura-fecha">
-            <span class="fecha">{{ formatDate(factura.fecha) }}</span>
-            <span class="hora">{{ factura.hora }}</span>
+            <!-- HORA CORREGIDA CON ZONA COLOMBIA -->
+            <span class="fecha-hora">{{ formatDateTime(factura.fecha, factura.hora) }}</span>
           </div>
         </div>
 
@@ -103,8 +103,9 @@
 
         <div class="detalle-info">
           <div class="info-row">
-            <span class="label">📅 Fecha:</span>
-            <span class="value">{{ formatDate(facturaSeleccionada.fecha) }} - {{ facturaSeleccionada.hora }}</span>
+            <span class="label">📅 Fecha y hora:</span>
+            <!-- HORA CORREGIDA CON ZONA COLOMBIA EN EL MODAL -->
+            <span class="value">{{ formatDateTime(facturaSeleccionada.fecha, facturaSeleccionada.hora) }}</span>
           </div>
           <div class="info-row">
             <span class="label">👤 Registrado por:</span>
@@ -122,7 +123,7 @@
                   :alt="detalle.nombre_producto"
                   class="producto-imagen"
                   @error="handleImageError"
-                  @click.stop="verPreviewImagen(detalle.imagen_producto) "
+                  @click.stop="verPreviewImagen(detalle.imagen_producto)"
                 />
                 <span class="preview-badge">👁️</span>
               </div>
@@ -183,8 +184,6 @@
         </div>
       </div>
     </div>
-
-    <!-- MODAL PREVIEW IMAGEN -->
   </div>
 </template>
 
@@ -203,7 +202,6 @@ const facturas = ref([])
 const facturaSeleccionada = ref(null)
 const detallesAumentos = ref([])
 const detallesNuevos = ref([])
-
 
 const hasMore = ref(true)
 const lastId = ref(null)
@@ -343,12 +341,6 @@ function cerrarDetalle() {
   detallesNuevos.value = []
 }
 
-function verPreviewImagen(src) {
-  if (src) {
-    imagenPreview.value = src
-  }
-}
-
 async function descargarFactura() {
   try {
     console.log('Descargando factura:', facturaSeleccionada.value.id)
@@ -383,14 +375,27 @@ function handleImageError(e) {
   e.target.src = 'https://via.placeholder.com/60?text=Sin+Imagen'
 }
 
-function formatDate(dateString) {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('es-CO', { 
-    day: '2-digit', 
-    month: 'short', 
-    year: 'numeric'
-  })
+// === FUNCIÓN NUEVA: FORMATEA FECHA + HORA EN ZONA COLOMBIA ===
+function formatDateTime(fechaISO, horaISO) {
+  // Combinamos fecha (YYYY-MM-DD) + hora (HH:MM:SS) del backend
+  const dateTimeString = `${fechaISO}T${horaISO}`
+  const date = new Date(dateTimeString)
+
+  const options = {
+    timeZone: 'America/Bogota',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true
+  }
+
+  return date.toLocaleString('es-CO', options).replace(', ', ' - ')
 }
+
+// === FUNCIÓN ANTIGUA ELIMINADA (ya no se usa) ===
+// No necesitas formatDate() separada
 
 function formatPrice(price) {
   return `$${Number(price || 0).toLocaleString('es-CO')} COP`
