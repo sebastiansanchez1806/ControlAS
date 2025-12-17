@@ -21,7 +21,7 @@ from conexion import engine
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
-
+from app.cloudinary_utils import eliminar_imagen_de_cloudinary
 from conexion import get_db
 from app.modelos import Administrador, Bar, DetalleFactura, DetalleFacturaInventario, Dueno, Factura, FacturaInventario, Gasto, GestorPrincipal, Historial, Mujer, NotificacionExamenEnviada, Producto, ProductoEliminado, Tarea
 from app.schemas import ActualizarCantidad, AdministradorCreate, AdministradorOut, AdministradorUpdate, BarCreate, BarOut, BarUpdate, DetalleFacturaOut, DuenoCreate, DuenoOut, DuenoUpdate, FacturaData, ForgotPasswordRequest, GestorPrincipalLoginRequest, GestorPrincipalLoginResponse, GestorPrincipalOut, GestorPrincipalPasswordUpdate, GestorPrincipalUpdate, HistorialOut, HistorialSimpleOut, HistorialWithProduct, LoginRequest, LoginResponse, MujerCreate, MujerOut, MujerUpdate, ProductoCreate, ProductoInfo, ProductoOut, ProductoUpdate, ResetPasswordRequest, TareaCreate, TareaOut, generate_invoice_html, get_password_hash, GestorPasswordCheck
@@ -216,36 +216,55 @@ def info_dueno(dueno_id: int, db: Session = Depends(get_db)):
 @router.delete("/bares_eliminar/{bar_id}", response_model=dict)
 def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
-    
+   
     if not bar:
         raise HTTPException(status_code=404, detail="Bar no encontrado")
-
-    nombre_bar = bar.nombre
     
+    nombre_bar = bar.nombre
+   
     try:
-        # ✅ PASO 1: Eliminar manualmente las facturas de inventario asociadas
+        # === NUEVO: Borrar imagen del bar de Cloudinary ===
+        if bar.imagen:
+            eliminar_imagen_de_cloudinary(bar.imagen)
+        
+        # === Borrar imágenes de todos los productos del bar ===
+        productos = db.query(Producto).filter(Producto.bar_id == bar_id).all()
+        for prod in productos:
+            if prod.imagen:
+                eliminar_imagen_de_cloudinary(prod.imagen)
+        
+        # === Borrar imágenes de todos los administradores del bar ===
+        admins = db.query(Administrador).filter(Administrador.bar_id == bar_id).all()
+        for admin in admins:
+            if admin.foto:
+                eliminar_imagen_de_cloudinary(admin.foto)
+        
+        # === El cascade de SQLAlchemy ya borra todo lo demás ===
+        # (facturas, historial, tareas, etc.)
+        
+        # ✅ Eliminar manualmente las facturas de inventario (como ya tenías)
         facturas_inventario = db.query(FacturaInventario).filter(
             FacturaInventario.bar_id == bar_id
         ).all()
-        
+       
         for factura_inv in facturas_inventario:
             db.query(DetalleFacturaInventario).filter(
                 DetalleFacturaInventario.factura_inventario_id == factura_inv.id
             ).delete()
-        
+       
         db.query(FacturaInventario).filter(
             FacturaInventario.bar_id == bar_id
         ).delete()
-        
-        # ✅ PASO 2: Eliminar el bar
+       
+        # ✅ Finalmente eliminar el bar
         db.delete(bar)
-        
         db.commit()
-        return {"mensaje": f"Bar '{nombre_bar}' y todos sus registros relacionados eliminados exitosamente"}
+        
+        return {"mensaje": f"Bar '{nombre_bar}' y todos sus registros e imágenes eliminados exitosamente"}
+        
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")
-
 @router.put("/bares_actualizar/{bar_id}", response_model=dict)
 def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
@@ -310,12 +329,18 @@ def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(nueva_mujer)
     return nueva_mujer  
-
 @router.delete("/mujeres_eliminar/{mujer_id}", response_model=dict)
 def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):
     mujer = db.query(Mujer).filter(Mujer.id == mujer_id).first()
     if not mujer:
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
+    
+    # === NUEVO: Borrar fotos de Cloudinary ===
+    if mujer.foto:
+        eliminar_imagen_de_cloudinary(mujer.foto)
+    if mujer.foto_examen:
+        eliminar_imagen_de_cloudinary(mujer.foto_examen)
+    
     db.delete(mujer)
     db.commit()
     return {"mensaje": "Mujer eliminada correctamente"}
@@ -381,7 +406,11 @@ def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)):
     admin = db.query(Administrador).filter(Administrador.id == admin_id).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
-
+    
+    # === NUEVO: Borrar foto de Cloudinary ===
+    if admin.foto:
+        eliminar_imagen_de_cloudinary(admin.foto)
+    
     db.delete(admin)
     db.commit()
     return {"mensaje": "Administrador eliminado correctamente"}
@@ -586,15 +615,18 @@ def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
 @router.delete("/eliminar_producto/{producto_id}")
 def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
     producto_a_eliminar = db.query(modelos.Producto).filter(modelos.Producto.id == producto_id).first()
-
     if not producto_a_eliminar:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
-
+    
+    # === NUEVO: Borrar imagen de Cloudinary ===
+    if producto_a_eliminar.imagen:
+        eliminar_imagen_de_cloudinary(producto_a_eliminar.imagen)
+    
     # 1. Marcar el producto como "eliminado"
     producto_a_eliminar.estado = 'eliminado'
     db.commit()
     db.refresh(producto_a_eliminar)
-
+    
     # 2. Registrar la acción en el historial
     mensaje_historial = f"Se eliminado el producto: {producto_a_eliminar.nombre}."
     tipo_historial = "elimino"
@@ -606,9 +638,8 @@ def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
         tipo=tipo_historial
     )
     db.commit()
-    
-    return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' ha sido marcado como eliminado."}
-
+   
+    return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' ha sido marcado como eliminado y su imagen borrada de la nube."}
 from fastapi import HTTPException, status
 import logging
 
@@ -1912,16 +1943,17 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
         raise HTTPException(status_code=404, detail="Dueño no encontrado")
-
+    
     try:
+        if db_dueno.imagen:
+            eliminar_imagen_de_cloudinary(db_dueno.imagen)
         db.delete(db_dueno)
         db.commit()
-        return {"detail": "Dueño eliminado correctamente"}
+        return {"detail": "Dueño y todos sus datos asociados eliminados correctamente"}
+        
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail="Error al eliminar el dueño")
-
-# === ENDPOINT 1: Listar facturas de inventario de un bar ===
 @router.get("/inventario/facturas/{bar_id}")
 async def obtener_facturas_inventario(
     bar_id: int,

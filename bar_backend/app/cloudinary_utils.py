@@ -127,3 +127,41 @@ except Exception as e:
     print(f"❌ Error: {e}")
     print("El sistema usará almacenamiento base64 como respaldo")
     print("="*60 + "\n")
+
+
+import cloudinary.api
+
+def eliminar_imagen_de_cloudinary(url_imagen: str) -> bool:
+
+    if not url_imagen or not url_imagen.startswith("https://res.cloudinary.com"):
+        print("⚠️ No es una URL de Cloudinary o está vacía → no se intenta borrar")
+        return False
+    
+    try:
+
+        partes = url_imagen.split("/upload/")
+        if len(partes) < 2:
+            print("⚠️ URL no tiene formato esperado")
+            return False
+        
+        public_id_con_extension = partes[1]  # v1234567890/controlas/bares/mi_bar.jpg
+        public_id = public_id_con_extension.split("?")[0]  # por si tiene parámetros
+        public_id = public_id.rsplit(".", 1)[0]  # quitar extensión .jpg
+        
+        print(f"🗑️ Intentando eliminar de Cloudinary: {public_id}")
+        
+        resultado = cloudinary.uploader.destroy(public_id, resource_type="image")
+        
+        if resultado.get("result") == "ok":
+            print(f"✅ Imagen eliminada exitosamente: {public_id}")
+            return True
+        elif resultado.get("result") == "not found":
+            print(f"ℹ️ Imagen no encontrada en Cloudinary (ya eliminada o nunca existió): {public_id}")
+            return False
+        else:
+            print(f"⚠️ Respuesta inesperada: {resultado}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error eliminando imagen de Cloudinary: {e}")
+        return False
