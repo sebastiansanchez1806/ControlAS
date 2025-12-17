@@ -812,10 +812,9 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
         print("Advertencia: Dueño del bar no encontrado. No se puede enviar el correo.")
         return nueva_factura
     
-    hora_colombia = nueva_factura.hora.astimezone(COLOMBIA_TZ)
+    hora_colombia = nueva_factura.hora.replace(tzinfo=COLOMBIA_TZ)
     fecha_formateada = nueva_factura.fecha.strftime("%d/%m/%Y")
     hora_formateada = hora_colombia.strftime("%I:%M %p")
-    
     invoice_data_for_email = schemas.FacturaData(
         id=nueva_factura.id,
         fecha=fecha_formateada,

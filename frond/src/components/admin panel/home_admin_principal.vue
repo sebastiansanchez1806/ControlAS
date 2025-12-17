@@ -2,7 +2,7 @@
   <div class="app-container">
     <!-- Header -->
     <header class="header">
-      <h1 class="app-title">Gestión de Dueños</h1>
+      <h1 class="app-title">Gestión de Dueños Sebitas</h1>
       
       <div class="header-actions">
         <!-- Search Bar en Header -->
