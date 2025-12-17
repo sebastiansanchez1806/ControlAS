@@ -377,9 +377,30 @@ function handleImageError(e) {
 
 // === FUNCIÓN NUEVA: FORMATEA FECHA + HORA EN ZONA COLOMBIA ===
 function formatDateTime(fechaISO, horaISO) {
-  // Combinamos fecha (YYYY-MM-DD) + hora (HH:MM:SS) del backend
-  const dateTimeString = `${fechaISO}T${horaISO}`
+  if (!fechaISO || !horaISO) {
+    return 'Fecha no disponible'
+  }
+
+  // Limpiamos la hora: quitamos milisegundos si los hay y aseguramos formato correcto
+  let horaLimpia = horaISO.split('.')[0]  // Quita .123456 si existe
+  if (horaLimpia.length === 5) {
+    horaLimpia = horaLimpia + ':00'  // Si viene "13:30" → "13:30:00"
+  } else if (horaLimpia.length === 8) {
+    // Ya está en formato HH:mm:ss → perfecto
+  } else {
+    // Caso raro, fallback
+    horaLimpia = '00:00:00'
+  }
+
+  // Construimos la fecha completa
+  const dateTimeString = `${fechaISO}T${horaLimpia}`
+
   const date = new Date(dateTimeString)
+
+  // Si por algún motivo falla, devolvemos algo legible
+  if (isNaN(date.getTime())) {
+    return 'Fecha inválida'
+  }
 
   const options = {
     timeZone: 'America/Bogota',

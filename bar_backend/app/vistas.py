@@ -204,6 +204,7 @@ def info_dueno(dueno_id: int, db: Session = Depends(get_db)):
         "puede_crear_mas": bares_count < dueno.cantidad_bares
     }
 
+# 5. ELIMINAR BAR (CRÍTICO - con todas las imágenes)
 @router.delete("/bares_eliminar/{bar_id}", response_model=dict)
 def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
@@ -211,41 +212,77 @@ def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Bar no encontrado")
     
     nombre_bar = bar.nombre
-   
+    
     try:
-        # Borrar imagen del bar
+        print(f"\n🗑️ ELIMINANDO BAR: {nombre_bar} (ID: {bar_id})")
+        
+        # 1. BORRAR IMAGEN DEL BAR
         if bar.imagen:
+            print(f"   📸 Eliminando imagen del bar...")
             eliminar_imagen_de_cloudinary(bar.imagen)
         
-        # Borrar imágenes de productos
+        # 2. BORRAR IMÁGENES DE PRODUCTOS
         productos = db.query(Producto).filter(Producto.bar_id == bar_id).all()
+        print(f"   🍾 Eliminando imágenes de {len(productos)} productos...")
         for prod in productos:
             if prod.imagen:
                 eliminar_imagen_de_cloudinary(prod.imagen)
         
-        # Borrar fotos de administradores
+        # 3. BORRAR FOTOS DE ADMINISTRADORES
         admins = db.query(Administrador).filter(Administrador.bar_id == bar_id).all()
+        print(f"   👔 Eliminando fotos de {len(admins)} administradores...")
         for admin in admins:
             if admin.foto:
                 eliminar_imagen_de_cloudinary(admin.foto)
         
-        # Eliminar facturas de inventario manualmente
-        facturas_inventario = db.query(FacturaInventario).filter(FacturaInventario.bar_id == bar_id).all()
+        # 4. BORRAR FOTOS DE MUJERES SI ES EL ÚNICO BAR DEL DUEÑO
+        dueno = db.query(Dueno).filter(Dueno.id == bar.dueno_id).first()
+        if dueno:
+            cantidad_bares = db.query(Bar).filter(Bar.dueno_id == dueno.id).count()
+            
+            # Si este es el único bar, eliminar las mujeres asociadas al dueño
+            if cantidad_bares == 1:
+                mujeres = db.query(Mujer).filter(Mujer.dueno_id == dueno.id).all()
+                print(f"   💃 Eliminando fotos de {len(mujeres)} mujeres (último bar del dueño)...")
+                for mujer in mujeres:
+                    if mujer.foto:
+                        eliminar_imagen_de_cloudinary(mujer.foto)
+                    if mujer.foto_examen:
+                        eliminar_imagen_de_cloudinary(mujer.foto_examen)
+        
+        # 5. ELIMINAR FACTURAS DE INVENTARIO MANUALMENTE
+        facturas_inventario = db.query(FacturaInventario).filter(
+            FacturaInventario.bar_id == bar_id
+        ).all()
+        print(f"   📄 Eliminando {len(facturas_inventario)} facturas de inventario...")
         for factura_inv in facturas_inventario:
             db.query(DetalleFacturaInventario).filter(
                 DetalleFacturaInventario.factura_inventario_id == factura_inv.id
             ).delete()
         db.query(FacturaInventario).filter(FacturaInventario.bar_id == bar_id).delete()
-       
-        # Eliminar el bar (cascade borra el resto)
+        
+        # 6. ELIMINAR EL BAR (cascade borra el resto)
+        print(f"   🏢 Eliminando bar de la base de datos...")
         db.delete(bar)
         db.commit()
         
-        return {"mensaje": f"Bar '{nombre_bar}' y todas sus imágenes eliminadas exitosamente"}
+        print(f"✅ Bar '{nombre_bar}' y TODAS sus imágenes eliminadas exitosamente\n")
+        
+        return {
+            "mensaje": f"Bar '{nombre_bar}' y todas sus imágenes eliminadas exitosamente",
+            "detalles": {
+                "bar": nombre_bar,
+                "productos_eliminados": len(productos),
+                "administradores_eliminados": len(admins),
+                "facturas_inventario_eliminadas": len(facturas_inventario)
+            }
+        }
         
     except Exception as e:
         db.rollback()
+        print(f"❌ ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")
+
 
 @router.put("/bares_actualizar/{bar_id}", response_model=dict)
 def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db)):
@@ -324,29 +361,39 @@ def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):
     db.delete(mujer)
     db.commit()
     return {"mensaje": "Mujer eliminada correctamente"}
-
 @router.put("/mujeres/{mujer_id}", response_model=MujerOut)
 def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depends(get_db)):
     mujer = db.query(Mujer).filter(Mujer.id == mujer_id).first()
     if not mujer:
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
-
+    
     fecha_examen_anterior = mujer.fecha_examen
     update_data = actualizacion.dict(exclude_unset=True)
-
+    
     # SUBIR IMÁGENES NUEVAS SI SE ENVÍAN
     if "foto" in update_data:
+        # Eliminar foto anterior
+        if mujer.foto:
+            eliminar_imagen_de_cloudinary(mujer.foto)
+        
+        # Subir nueva foto
         update_data["foto"] = subir_imagen_a_cloudinary(update_data["foto"], carpeta="mujeres/fotos")
+    
     if "foto_examen" in update_data:
+        # Eliminar foto de examen anterior
+        if mujer.foto_examen:
+            eliminar_imagen_de_cloudinary(mujer.foto_examen)
+        
+        # Subir nueva foto de examen
         update_data["foto_examen"] = subir_imagen_a_cloudinary(update_data["foto_examen"], carpeta="mujeres/examenes")
-
+    
     # Aplicar cambios
     for campo, valor in update_data.items():
         setattr(mujer, campo, valor)
-
+    
     db.commit()
     db.refresh(mujer)
-
+    
     # Borrar notificaciones antiguas si cambió la fecha de examen
     if 'fecha_examen' in update_data and fecha_examen_anterior != mujer.fecha_examen:
         deleted = db.query(NotificacionExamenEnviada).filter(
@@ -354,8 +401,9 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
         ).delete()
         db.commit()
         print(f"Notificaciones antiguas eliminadas ({deleted}) para {mujer.nombre} al renovar examen")
-
+    
     return mujer
+
 
 @router.get("/mujeres/dueno/{dueno_id}", response_model=List[MujerOut])
 def obtener_mujeres_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
@@ -411,20 +459,28 @@ def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Sess
         if db.query(Administrador).filter(Administrador.documento == datos.documento).filter(Administrador.id != admin_id).first():
             raise HTTPException(status_code=400, detail="Ese documento ya está registrado.")
         admin.documento = datos.documento
-
+    
     if datos.telefono is not None:
         admin.telefono = datos.telefono
-        
+    
+    # ACTUALIZAR FOTO (eliminar anterior y subir nueva)
     if datos.foto is not None:
+        # Eliminar foto anterior
+        if admin.foto:
+            eliminar_imagen_de_cloudinary(admin.foto)
+        
+        # Subir nueva foto
         admin.foto = subir_imagen_a_cloudinary(datos.foto, carpeta="administradores")
-
+    
     if datos.contraseña is not None:
         hashed_password = pwd_context.hash(datos.contraseña)
         admin.contraseña = hashed_password
-
+    
     db.commit()
     db.refresh(admin)
     return admin
+
+
 
 @router.post("/tareas_crear", response_model=TareaOut)
 def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
@@ -534,8 +590,13 @@ async def get_tareas_pendientes_count(admin_id: int, db: Session = Depends(get_d
 
 @router.post("/crear_productos", response_model=ProductoOut)
 def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
-    imagen_url = subir_imagen_a_cloudinary(producto.imagen, carpeta="productos")
-
+    # USAR CARPETA ESPECÍFICA DEL BAR
+    imagen_url = subir_imagen_a_cloudinary(
+        producto.imagen, 
+        carpeta="productos",
+        bar_id=producto.bar_id  # ← PARÁMETRO AGREGADO
+    )
+    
     nuevo_producto = Producto(
         nombre=producto.nombre,
         imagen=imagen_url,
@@ -561,7 +622,6 @@ def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
     db.commit()
     
     return nuevo_producto
-
 @router.delete("/eliminar_producto/{producto_id}")
 def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
     producto_a_eliminar = db.query(Producto).filter(Producto.id == producto_id).first()
@@ -590,6 +650,7 @@ def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
     db.commit()
     
     return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' marcado como eliminado y su imagen borrada de la nube."}
+
 
 from fastapi import HTTPException, status
 import logging
@@ -627,18 +688,26 @@ def editar_producto(producto_id: int, producto_data: ProductoUpdate, db: Session
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
     update_data = producto_data.dict(exclude_unset=True)
-
-    # SUBIR NUEVA IMAGEN SI SE ENVÍA
+    
+    # SUBIR NUEVA IMAGEN CON CARPETA DEL BAR
     if "imagen" in update_data:
-        update_data["imagen"] = subir_imagen_a_cloudinary(update_data["imagen"], carpeta="productos")
-
+        # Eliminar imagen anterior
+        if producto.imagen:
+            eliminar_imagen_de_cloudinary(producto.imagen)
+        
+        # Subir nueva imagen
+        update_data["imagen"] = subir_imagen_a_cloudinary(
+            update_data["imagen"], 
+            carpeta="productos",
+            bar_id=producto.bar_id  # ← PARÁMETRO AGREGADO
+        )
+    
     for campo, valor in update_data.items():
         setattr(producto, campo, valor)
-
+    
     db.commit()
     db.refresh(producto)
     return producto
-
 @router.patch("/actualizar_productos/{producto_id}")
 @router.put("/actualizar_productos/{producto_id}")
 def actualizar_producto(
@@ -649,15 +718,15 @@ def actualizar_producto(
     producto_db = db.query(modelos.Producto).filter(modelos.Producto.id == producto_id).first()
     if not producto_db:
         raise HTTPException(status_code=404, detail=f"Producto con ID {producto_id} no encontrado.")
-
+    
     update_data = producto_update.dict(exclude_unset=True)
     
-    # DETECCIÓN Y REGISTRO BONITO DEL CAMBIO DE STOCK
+    # DETECCIÓN Y REGISTRO DEL CAMBIO DE STOCK
     if "cantidad" in update_data:
         nueva = update_data["cantidad"]
         anterior = producto_db.cantidad
         diferencia = nueva - anterior
-
+        
         if diferencia > 0:
             mensaje = f"➕ Aumentó {producto_db.nombre}: +{diferencia} und"
             tipo = "aumento"
@@ -667,7 +736,7 @@ def actualizar_producto(
         else:
             mensaje = f"✏️ Ajuste en {producto_db.nombre} (sin cambio)"
             tipo = "ajuste"
-
+        
         agregar_a_historial(
             db=db,
             bar_id=producto_db.bar_id,
@@ -675,18 +744,25 @@ def actualizar_producto(
             mensaje=mensaje,
             tipo=tipo
         )
-
-    # SUBIR NUEVA IMAGEN SI SE ENVÍA
+    
+    # SUBIR NUEVA IMAGEN CON CARPETA DEL BAR
     if "imagen" in update_data:
-        update_data["imagen"] = subir_imagen_a_cloudinary(update_data["imagen"], carpeta="productos")
-
-    # Aplicar todos los cambios
+        # Eliminar imagen anterior
+        if producto_db.imagen:
+            eliminar_imagen_de_cloudinary(producto_db.imagen)
+        
+        # Subir nueva imagen
+        update_data["imagen"] = subir_imagen_a_cloudinary(
+            update_data["imagen"], 
+            carpeta="productos",
+            bar_id=producto_db.bar_id  # ← PARÁMETRO AGREGADO
+        )
+    
     for key, value in update_data.items():
         setattr(producto_db, key, value)
-
+    
     db.commit()
     db.refresh(producto_db)
-
     return producto_db
 
 @router.get("/historial/bar/{bar_id}", response_model=List[HistorialSimpleOut])
@@ -1065,16 +1141,22 @@ def update_dueno_password(
 
 @router.put("/dueno/{dueno_id}/photo")
 def update_dueno_photo(
-    dueno_id: int, 
-    photo_data: schemas.PhotoUpdate, 
+    dueno_id: int,
+    photo_data: schemas.PhotoUpdate,
     db: Session = Depends(get_db)
 ):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dueño no encontrado")
     
+    # Eliminar imagen anterior
+    if db_dueno.imagen:
+        eliminar_imagen_de_cloudinary(db_dueno.imagen)
+    
+    # Subir nueva imagen
     foto_url = subir_imagen_a_cloudinary(photo_data.photo_url, carpeta="duenos")
     db_dueno.imagen = foto_url
+    
     db.commit()
     db.refresh(db_dueno)
     return {"message": "Imagen de perfil actualizada exitosamente", "photoUrl": db_dueno.imagen}
@@ -1514,11 +1596,11 @@ async def guardar_inventario_con_factura(
 ):
     import json
     import base64
-
+    
     # VALIDAR PERMISOS
     administrador_id = None
     dueno_id = None
-
+    
     if tipo_usuario == "administrador":
         admin = db.query(Administrador).filter(
             Administrador.id == usuario_id,
@@ -1532,7 +1614,7 @@ async def guardar_inventario_con_factura(
         if not bar_check:
             raise HTTPException(status_code=403, detail="Dueño no autorizado")
         dueno_id = usuario_id
-
+    
     # SUBIR PDF DE FACTURA A CLOUDINARY
     pdf_url = None
     nombre_archivo = None
@@ -1546,7 +1628,7 @@ async def guardar_inventario_con_factura(
             pdf_url = pdf_info["url"]
             nombre_archivo = pdf_info["nombre"]
             mime_type = pdf_info["mime_type"]
-
+    
     # DETERMINAR TIPO
     tipo_op = "aumento_stock"
     if nuevos and not aumentos:
@@ -1555,7 +1637,7 @@ async def guardar_inventario_con_factura(
         tipo_op = "ambos"
     
     # CREAR FACTURA INVENTARIO
-    now_colombia = datetime.now(COLOMBIA_TZ)  # ← Ya correcto
+    now_colombia = datetime.now(COLOMBIA_TZ)
     
     nueva_factura_inv = FacturaInventario(
         bar_id=bar_id,
@@ -1571,7 +1653,7 @@ async def guardar_inventario_con_factura(
     )
     db.add(nueva_factura_inv)
     db.flush()
-
+    
     # PROCESAR AUMENTOS
     if aumentos:
         try:
@@ -1583,8 +1665,9 @@ async def guardar_inventario_con_factura(
                 ).first()
                 if not prod:
                     continue
+                
                 prod.cantidad += int(item['cantidad'])
-
+                
                 detalle = DetalleFacturaInventario(
                     factura_inventario_id=nueva_factura_inv.id,
                     producto_id=prod.id,
@@ -1597,7 +1680,7 @@ async def guardar_inventario_con_factura(
             print(f"❌ Error procesando aumentos: {e}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Error procesando aumentos: {str(e)}")
-
+    
     # PROCESAR PRODUCTOS NUEVOS CON IMÁGENES
     if nuevos:
         try:
@@ -1621,8 +1704,12 @@ async def guardar_inventario_con_factura(
                     
                     imagen_base64 = f"data:{content_type};base64,{base64.b64encode(imagen_bytes).decode('utf-8')}"
                     
-                    # SUBIR A CLOUDINARY (carpeta productos)
-                    imagen_url_nueva = subir_imagen_a_cloudinary(imagen_base64, carpeta="productos")
+                    # SUBIR A CLOUDINARY CON CARPETA DEL BAR
+                    imagen_url_nueva = subir_imagen_a_cloudinary(
+                        imagen_base64, 
+                        carpeta="productos",
+                        bar_id=bar_id  # ← PARÁMETRO AGREGADO
+                    )
                 else:
                     print(f"⚠️ No se encontró imagen para índice {index}")
                 
@@ -1660,7 +1747,7 @@ async def guardar_inventario_con_factura(
             traceback.print_exc()
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
-
+    
     try:
         db.commit()
         print(f"✅ Inventario guardado (Factura ID: {nueva_factura_inv.id})")
@@ -1668,7 +1755,7 @@ async def guardar_inventario_con_factura(
         db.rollback()
         print(f"❌ Error al commit: {e}")
         raise HTTPException(status_code=500, detail=f"Error guardando: {str(e)}")
-
+    
     return {
         "mensaje": "Inventario actualizado con éxito",
         "factura_inventario_id": nueva_factura_inv.id
@@ -1775,7 +1862,6 @@ def actualizar_dueno(
         raise HTTPException(status_code=400, detail="Error de integridad: dato duplicado")
 
     return db_dueno
-
 @router.delete("/duenos/{dueno_id}")
 def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
@@ -1783,15 +1869,63 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Dueño no encontrado")
     
     try:
+        print(f"\n🗑️ ELIMINANDO DUEÑO: {db_dueno.nombre} (ID: {dueno_id})")
+        
+        # 1. ELIMINAR IMAGEN DEL DUEÑO
         if db_dueno.imagen:
+            print(f"   📸 Eliminando imagen del dueño...")
             eliminar_imagen_de_cloudinary(db_dueno.imagen)
+        
+        # 2. ELIMINAR IMÁGENES DE MUJERES ASOCIADAS
+        mujeres = db.query(Mujer).filter(Mujer.dueno_id == dueno_id).all()
+        print(f"   💃 Eliminando fotos de {len(mujeres)} mujeres...")
+        for mujer in mujeres:
+            if mujer.foto:
+                eliminar_imagen_de_cloudinary(mujer.foto)
+            if mujer.foto_examen:
+                eliminar_imagen_de_cloudinary(mujer.foto_examen)
+        
+        # 3. ELIMINAR IMÁGENES DE TODOS LOS BARES Y SUS CONTENIDOS
+        bares = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
+        print(f"   🏢 Eliminando {len(bares)} bares y su contenido...")
+        
+        for bar in bares:
+            # Imagen del bar
+            if bar.imagen:
+                eliminar_imagen_de_cloudinary(bar.imagen)
+            
+            # Productos del bar
+            productos = db.query(Producto).filter(Producto.bar_id == bar.id).all()
+            for prod in productos:
+                if prod.imagen:
+                    eliminar_imagen_de_cloudinary(prod.imagen)
+            
+            # Administradores del bar
+            admins = db.query(Administrador).filter(Administrador.bar_id == bar.id).all()
+            for admin in admins:
+                if admin.foto:
+                    eliminar_imagen_de_cloudinary(admin.foto)
+        
+        # 4. ELIMINAR DUEÑO (cascade eliminará todo lo demás)
+        print(f"   👤 Eliminando dueño de la base de datos...")
         db.delete(db_dueno)
         db.commit()
-        return {"detail": "Dueño y todos sus datos asociados eliminados correctamente"}
+        
+        print(f"✅ Dueño '{db_dueno.nombre}' y TODOS sus datos eliminados\n")
+        
+        return {
+            "detail": "Dueño y todos sus datos asociados eliminados correctamente",
+            "detalles": {
+                "dueño": db_dueno.nombre,
+                "bares_eliminados": len(bares),
+                "mujeres_eliminadas": len(mujeres)
+            }
+        }
         
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail="Error al eliminar el dueño")
+        print(f"❌ ERROR: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al eliminar el dueño: {str(e)}")
 
 @router.get("/inventario/facturas/{bar_id}")
 async def obtener_facturas_inventario(
