@@ -670,78 +670,95 @@ const startInvoice = async () => {
 };
 
 const generateInvoice = async () => {
-  isGenerating.value = true;
-  
-  // Mapear los gastos para que coincidan con el esquema de FastAPI
-  const gastosParaEnvio = gastosHormiga.value
-    .filter(g => g.descripcion && g.monto !== null && g.monto > 0) // Filtrar gastos vacíos
-    .map(gasto => ({
-      nombre: gasto.descripcion,
-      precio: gasto.monto
-    }));
+  // 1. Mostrar confirmación con SweetAlert2
+  const result = await Swal.fire({
+    title: '¿Estás seguro de generar esta factura?',
+    text: 'Una vez generada, no podrás modificarla ni volver atrás.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Sí, generar factura',
+    cancelButtonText: 'Cancelar',
+    reverseButtons: true, // hace que el botón rojo (confirm) esté a la derecha
+    confirmButtonColor: '#ff69b4',
+    cancelButtonColor: '#6b7280',
+    background: '#1a1a1a',
+    color: '#f8fafc',
+  });
 
-  const invoicePayload = {
-    bar_id: adminStore.bar_id,
-    administrador_id: adminStore.id,
-    productos: products.value.map(p => ({
-      producto_id: p.id,
-      cantidad_final: p.finalQuantity,
-    })),
-    gastos_hormiga: gastosParaEnvio, // Usar la lista corregida
-  };
+  // 2. Si el usuario cancela, no hacemos nada
+  if (!result.isConfirmed) {
+    return;
+  }
 
-  try {
-    // *** USO DE LA CONSTANTE GLOBAL ***
-    const response = await axios.post(`${API_BASE_URL}/generar_factura`, invoicePayload);
-    
-    // Aquí es donde ajustamos el objeto que se mostrará en la vista
-    displayedInvoice.value = {
-      ...response.data,
-      detalles_factura: response.data.detalles_factura.map(detail => {
-        const originalProduct = products.value.find(p => p.id === detail.producto_id);
-        return {
-          ...detail,
-          imagen_producto: originalProduct ? originalProduct.imagen : null 
-        };
-      }),
-      // Corregimos la asignación de gastos
-      gastos: gastosParaEnvio,
-    };
+  // 3. Si confirma, procedemos con la generación
+  isGenerating.value = true;
 
-    isInvoiceGenerated.value = true;
-    
-    // Limpieza y recarga del historial
-    await Swal.fire({
-      title: '¡Factura generada!',
-      text: 'La factura diaria se ha guardado correctamente.',
-      icon: 'success',
-      confirmButtonText: 'Entendido',
-      confirmButtonColor: '#ff69b4',
-      background: '#1a1a1a',
-      color: '#f8fafc',
-    });
-    
-    closeModal();
-    invoices.value = [];
-    page.value = 1;
-    hasMore.value = true;
-    await fetchInvoices(); 
+  // Mapear los gastos para que coincidan con el esquema de FastAPI
+  const gastosParaEnvio = gastosHormiga.value
+    .filter(g => g.descripcion && g.monto !== null && g.monto > 0)
+    .map(gasto => ({
+      nombre: gasto.descripcion,
+      precio: gasto.monto
+    }));
 
-  } catch (error) {
-    console.error('Error al generar la factura:', error);
-    const errorMessage = error.response?.data?.detail || 'Hubo un error inesperado al generar la factura.';
-    Swal.fire({
-      title: 'Error',
-      text: `Error al generar la factura: ${errorMessage}`,
-      icon: 'error',
-      confirmButtonText: 'Aceptar',
-      confirmButtonColor: '#ff69b4',
-      background: '#1a1a1a',
-      color: '#f8fafc',
-    });
-  } finally {
-    isGenerating.value = false;
-  }
+  const invoicePayload = {
+    bar_id: adminStore.bar_id,
+    administrador_id: adminStore.id,
+    productos: products.value.map(p => ({
+      producto_id: p.id,
+      cantidad_final: p.finalQuantity,
+    })),
+    gastos_hormiga: gastosParaEnvio,
+  };
+
+  try {
+    const response = await axios.post(`${API_BASE_URL}/generar_factura`, invoicePayload);
+
+    displayedInvoice.value = {
+      ...response.data,
+      detalles_factura: response.data.detalles_factura.map(detail => {
+        const originalProduct = products.value.find(p => p.id === detail.producto_id);
+        return {
+          ...detail,
+          imagen_producto: originalProduct ? originalProduct.imagen : null
+        };
+      }),
+      gastos: gastosParaEnvio,
+    };
+
+    isInvoiceGenerated.value = true;
+
+    await Swal.fire({
+      title: '¡Factura generada!',
+      text: 'La factura diaria se ha guardado correctamente.',
+      icon: 'success',
+      confirmButtonText: 'Entendido',
+      confirmButtonColor: '#ff69b4',
+      background: '#1a1a1a',
+      color: '#f8fafc',
+    });
+
+    closeModal();
+    invoices.value = [];
+    page.value = 1;
+    hasMore.value = true;
+    await fetchInvoices();
+
+  } catch (error) {
+    console.error('Error al generar la factura:', error);
+    const errorMessage = error.response?.data?.detail || 'Hubo un error inesperado al generar la factura.';
+    Swal.fire({
+      title: 'Error',
+      text: `Error al generar la factura: ${errorMessage}`,
+      icon: 'error',
+      confirmButtonText: 'Aceptar',
+      confirmButtonColor: '#ff69b4',
+      background: '#1a1a1a',
+      color: '#f8fafc',
+    });
+  } finally {
+    isGenerating.value = false;
+  }
 };
 
 const viewInvoiceDetails = (invoice) => {

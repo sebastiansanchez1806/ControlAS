@@ -1982,7 +1982,7 @@ async def obtener_facturas_inventario(
         resultado.append({
             "id": factura.id,
             "fecha": factura.fecha.isoformat(),
-            "hora": hora_local.strftime("%I:%M %p"),
+            "hora": hora_local.strftime("%H:%M"),  # → "15:30" en vez de "03:30 PM"
             "hora_utc": factura.hora.isoformat(),
             "tipo_operacion": factura.tipo_operacion,
             "tiene_factura": factura.observaciones is not None,  # ← Ahora usamos observaciones (URL)

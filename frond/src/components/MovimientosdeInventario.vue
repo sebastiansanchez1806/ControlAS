@@ -378,56 +378,74 @@ function formatDateTime(fechaISO, horaString) {
   }
 
   try {
-    // Si viene separado (fecha YYYY-MM-DD y hora HH:MM o HH:MM:SS)
+    let date
+
     if (horaString && typeof horaString === 'string') {
-      // Asegurar formato completo HH:MM:SS
-      let horaLimpia = horaString.split('.')[0] // Quita milisegundos
-      
-      // Si viene sin segundos, agregarlos
-      if (horaLimpia.length === 5) { // HH:MM
-        horaLimpia = horaLimpia + ':00'
+      // Limpiar hora: quitar milisegundos y poner en mayúsculas
+      let horaLimpia = horaString.trim().toUpperCase().split('.')[0]
+
+      // Detectar AM/PM al final
+      const ampmMatch = horaLimpia.match(/(AM|PM)$/)
+      const hasAMPM = ampmMatch !== null
+      let horaBase = hasAMPM ? horaLimpia.replace(/(AM|PM)$/, '').trim() : horaLimpia
+
+      // Asegurar que tenga segundos (necesario para ISO)
+      if (horaBase.split(':').length === 2) {
+        horaBase += ':00'
       }
-      
-      // Construir fecha completa
-      const dateTimeString = `${fechaISO}T${horaLimpia}`
-      const date = new Date(dateTimeString)
-      
+
+      let hours24
+
+      if (hasAMPM) {
+        // Convertir manualmente de 12h a 24h
+        let [hours, minutes, seconds] = horaBase.split(':').map(Number)
+        
+        const ampm = ampmMatch[0] // 'AM' o 'PM'
+
+        if (ampm === 'PM' && hours !== 12) {
+          hours += 12
+        }
+        if (ampm === 'AM' && hours === 12) {
+          hours = 0
+        }
+
+        hours24 = String(hours).padStart(2, '0')
+      } else {
+        // Ya viene en formato 24h (por si acaso en otros endpoints)
+        hours24 = horaBase.split(':')[0].padStart(2, '0')
+      }
+
+      // Construir string ISO estricto con la T → JavaScript lo parsea perfecto
+      const isoString = `${fechaISO}T${hours24}:${horaBase.split(':')[1]}:${horaBase.split(':')[2] || '00'}-05:00`
+
+      // -05:00 fuerza que sea interpretada como hora de Colombia (UTC-5)
+      date = new Date(isoString)
+
       if (isNaN(date.getTime())) {
-        return 'Fecha inválida'
+        throw new Error('Fecha inválida después de conversión')
       }
-
-      const options = {
-        timeZone: 'America/Bogota',
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }
-
-      return date.toLocaleString('es-CO', options).replace(',', ' -')
-    }
-    
-    // Si solo viene la fecha
-    const date = new Date(fechaISO)
-    
-    if (isNaN(date.getTime())) {
-      return 'Fecha inválida'
+    } else {
+      // Solo fecha → asumir medianoche en Colombia
+      date = new Date(`${fechaISO}T00:00:00-05:00`)
     }
 
+    // Formateo final bonito, usando la zona horaria de Colombia
     const options = {
       timeZone: 'America/Bogota',
       day: '2-digit',
       month: 'short',
-      year: 'numeric'
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
     }
 
-    return date.toLocaleString('es-CO', options)
-    
+    // Reemplazar la coma por " - " como te gusta
+    return date.toLocaleString('es-CO', options).replace(',', ' -')
+
   } catch (error) {
     console.error('Error formateando fecha:', error, { fechaISO, horaString })
-    return 'Fecha no disponible'
+    return 'Fecha inválida'
   }
 }
 
