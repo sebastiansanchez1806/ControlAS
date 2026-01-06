@@ -46,6 +46,13 @@
           <i class="fas fa-boxes"></i> 
           <span class="nav-text">Productos</span>
         </button>
+        <button 
+          @click="setView('facturas')" 
+          :class="['nav-button', 'nav-button-green', { active: currentView === 'facturas' }]"
+        >
+          <i class="fas fa-file-invoice-dollar"></i> 
+          <span class="nav-text">Facturas</span>
+        </button>
       </nav>
 
       <button @click="goBack" class="btn-volver">
@@ -234,15 +241,32 @@
           {{ searchProduct ? 'No se encontraron resultados' : 'No hay productos registrados.' }}
         </p>
       </div>
+
+      <!-- FACTURAS -->
+      <div v-else-if="currentView === 'facturas'" class="list-section">
+        <div class="section-header">
+          <h2 class="section-title green-gradient">
+            <i class="fas fa-file-invoice-dollar"></i> 
+            <span class="title-text">Gestión de Facturas</span>
+          </h2>
+        </div>
+        
+        <facturas_duenos :barId="barId" />
+      </div>
     </main>
   </div>
 </template>
 
 <script>
 import axios from 'axios'
-import { API_BASE_URL } from '@/config/api'
 
+import { API_BASE_URL } from '@/config/api';
+import facturas_duenos from './facturas_duenos.vue';
 export default {
+  components: {
+    facturas_duenos
+  },
+  
   data() {
     return {
       currentView: 'administradores',
@@ -401,7 +425,6 @@ export default {
   }
 }
 </script>
-
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -424,7 +447,28 @@ export default {
   color: #ffffff;
   position: relative;
 }
+.green-gradient {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+}
 
+.nav-button-green {
+  border-color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+}
+
+.nav-button-green:hover {
+  background: rgba(16, 185, 129, 0.2);
+  box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4);
+}
+
+.nav-button-green.active {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border-color: #10b981;
+  box-shadow: 0 4px 20px rgba(16, 185, 129, 0.5);
+}
 /* LOADER */
 .loading-overlay {
   position: fixed;

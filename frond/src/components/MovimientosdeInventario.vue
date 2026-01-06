@@ -48,7 +48,7 @@
             </span>
           </div>
           <div class="factura-fecha">
-            <span class="fecha-hora">{{ formatDateTime(factura.fecha, factura.hora) }}</span>
+           <span class="fecha">{{ formatSoloFecha(factura.fecha) }}</span>
           </div>
         </div>
 
@@ -102,8 +102,8 @@
 
         <div class="detalle-info">
           <div class="info-row">
-            <span class="label">📅 Fecha y hora:</span>
-            <span class="value">{{ formatDateTime(facturaSeleccionada.fecha, facturaSeleccionada.hora) }}</span>
+            <span class="label">📅 Fecha:</span>
+            <span class="value">{{ formatSoloFecha(facturaSeleccionada.fecha) }}</span> 
           </div>
           <div class="info-row">
             <span class="label">👤 Registrado por:</span>
@@ -190,6 +190,10 @@ import { ref, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useActiveBarStore } from '@/stores/activeBar'
 import { API_BASE_URL } from '../config/api'
 
+// === NUEVO: Importamos date-fns para manejar fechas y horas correctamente ===
+import { format, parseISO } from 'date-fns'
+import { es } from 'date-fns/locale'
+
 const emit = defineEmits(['navigate-out'])
 const activeBarStore = useActiveBarStore()
 
@@ -207,7 +211,7 @@ const lastId = ref(null)
 const searchQuery = ref('')
 const facturasFiltradas = computed(() => {
   if (!searchQuery.value) return facturas.value
- 
+
   const query = searchQuery.value.toLowerCase()
   return facturas.value.filter(f => {
     const idMatch = f.id.toString().includes(query)
@@ -215,17 +219,39 @@ const facturasFiltradas = computed(() => {
     return idMatch || fechaMatch
   })
 })
+function formatSoloFecha(fechaISO) {
+  if (!fechaISO) return 'Fecha no disponible'
+
+  try {
+    // parseISO espera formato ISO completo, pero funciona bien con solo fecha
+    const date = parseISO(fechaISO)
+
+    if (isNaN(date.getTime())) {
+      return 'Fecha inválida'
+    }
+
+    // Formato deseado: 6 enero 2026   ó   06 ene 2026   (elige el que prefieras)
+    return format(date, "d 'de' MMMM yyyy", { locale: es })
+    // Alternativas populares:
+    // "dd/MM/yyyy"          → 06/01/2026
+    // "d MMMM yyyy"         → 6 enero 2026
+    // "dd 'de' MMMM 'de' yyyy" → 06 de enero de 2026
+  } catch (error) {
+    console.error('Error formateando fecha:', error, { fechaISO })
+    return 'Fecha inválida'
+  }
+}
 
 onMounted(async () => {
   console.log('Bar ID del store:', activeBarStore.id)
- 
+
   if (!activeBarStore.id) {
     console.error('No hay bar seleccionado en el store')
     alert('Error: No se detectó el bar. Por favor selecciona un bar primero.')
     loading.value = false
     return
   }
- 
+
   await cargarFacturas()
   agregarScrollListener()
 })
@@ -236,10 +262,10 @@ onUnmounted(() => {
 
 const handleScroll = () => {
   if (loadingMore.value || !hasMore.value || loading.value) return
-  
+
   const cercaDelFinal =
     window.innerHeight + window.scrollY >= document.body.offsetHeight - 1200
-  
+
   if (cercaDelFinal) {
     cargarFacturas()
   }
@@ -251,7 +277,7 @@ const agregarScrollListener = () => {
 
 async function cargarFacturas() {
   if (!hasMore.value || loadingMore.value) return
-  
+
   if (facturas.value.length === 0) {
     loading.value = true
   } else {
@@ -260,23 +286,23 @@ async function cargarFacturas() {
 
   try {
     console.log('Cargando facturas... lastId:', lastId.value)
-    
+
     let url = `${API_BASE_URL}/inventario/facturas/${activeBarStore.id}?limit=20`
     if (lastId.value !== null) {
       url += `&last_id=${lastId.value}`
     }
 
     const res = await fetch(url)
-   
+
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error del servidor:', errorText)
       throw new Error('Error al cargar facturas')
     }
-   
+
     const data = await res.json()
     console.log('Facturas recibidas:', data.length)
-    
+
     if (data.length === 0) {
       hasMore.value = false
       return
@@ -310,21 +336,21 @@ async function verDetalle(factura) {
 async function cargarDetalles(facturaId) {
   try {
     console.log('Cargando detalles de factura:', facturaId)
-   
+
     const res = await fetch(`${API_BASE_URL}/inventario/factura/${facturaId}/detalles`)
-   
+
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error cargando detalles:', errorText)
       throw new Error('Error al cargar detalles')
     }
-   
+
     const data = await res.json()
     console.log('Detalles recibidos:', data.length, 'productos')
-   
+
     detallesAumentos.value = data.filter(d => !d.es_nuevo_producto)
     detallesNuevos.value = data.filter(d => d.es_nuevo_producto)
-   
+
   } catch (error) {
     console.error('Error cargando detalles:', error)
     alert('No se pudieron cargar los detalles de la factura')
@@ -340,15 +366,15 @@ function cerrarDetalle() {
 async function descargarFactura() {
   try {
     console.log('Descargando factura:', facturaSeleccionada.value.id)
-   
+
     const res = await fetch(`${API_BASE_URL}/inventario/factura/${facturaSeleccionada.value.id}/descargar`)
-   
+
     if (!res.ok) {
       const errorText = await res.text()
       console.error('Error descargando:', errorText)
       throw new Error('Error al descargar')
     }
-   
+
     const blob = await res.blob()
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -358,7 +384,7 @@ async function descargarFactura() {
     a.click()
     window.URL.revokeObjectURL(url)
     document.body.removeChild(a)
-   
+
     console.log('Factura descargada exitosamente')
   } catch (error) {
     console.error('Error descargando factura:', error)
@@ -371,78 +397,52 @@ function handleImageError(e) {
   e.target.src = 'https://via.placeholder.com/60?text=Sin+Imagen'
 }
 
-// === FUNCIÓN CORREGIDA: FORMATEA FECHA + HORA ===
+// === FUNCIÓN CORREGIDA CON date-fns (100% confiable para Colombia) ===
 function formatDateTime(fechaISO, horaString) {
-  if (!fechaISO) {
-    return 'Fecha no disponible'
-  }
+  if (!fechaISO) return 'Fecha no disponible'
 
   try {
-    let date
+    let fullIsoString
 
     if (horaString && typeof horaString === 'string') {
-      // Limpiar hora: quitar milisegundos y poner en mayúsculas
-      let horaLimpia = horaString.trim().toUpperCase().split('.')[0]
+      // Ejemplo: horaString = "11:32 PM" o "03:30 AM"
+      const horaLimpia = horaString.trim().toUpperCase()
 
-      // Detectar AM/PM al final
       const ampmMatch = horaLimpia.match(/(AM|PM)$/)
-      const hasAMPM = ampmMatch !== null
-      let horaBase = hasAMPM ? horaLimpia.replace(/(AM|PM)$/, '').trim() : horaLimpia
+      let horaBase = ampmMatch ? horaLimpia.replace(/(AM|PM)$/, '').trim() : horaLimpia
 
-      // Asegurar que tenga segundos (necesario para ISO)
-      if (horaBase.split(':').length === 2) {
-        horaBase += ':00'
-      }
+      // Añadir segundos si faltan
+      if (horaBase.split(':').length === 2) horaBase += ':00'
 
-      let hours24
-
-      if (hasAMPM) {
-        // Convertir manualmente de 12h a 24h
+      if (ampmMatch) {
         let [hours, minutes, seconds] = horaBase.split(':').map(Number)
-        
-        const ampm = ampmMatch[0] // 'AM' o 'PM'
+        const ampm = ampmMatch[0]
 
-        if (ampm === 'PM' && hours !== 12) {
-          hours += 12
-        }
-        if (ampm === 'AM' && hours === 12) {
-          hours = 0
-        }
+        if (ampm === 'PM' && hours !== 12) hours += 12
+        if (ampm === 'AM' && hours === 12) hours = 0
 
-        hours24 = String(hours).padStart(2, '0')
+        const hours24 = String(hours).padStart(2, '0')
+        fullIsoString = `${fechaISO}T${hours24}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
       } else {
-        // Ya viene en formato 24h (por si acaso en otros endpoints)
-        hours24 = horaBase.split(':')[0].padStart(2, '0')
-      }
-
-      // Construir string ISO estricto con la T → JavaScript lo parsea perfecto
-      const isoString = `${fechaISO}T${hours24}:${horaBase.split(':')[1]}:${horaBase.split(':')[2] || '00'}-05:00`
-
-      // -05:00 fuerza que sea interpretada como hora de Colombia (UTC-5)
-      date = new Date(isoString)
-
-      if (isNaN(date.getTime())) {
-        throw new Error('Fecha inválida después de conversión')
+        // Formato 24h (por si otro endpoint lo usa)
+        fullIsoString = `${fechaISO}T${horaBase}`
       }
     } else {
-      // Solo fecha → asumir medianoche en Colombia
-      date = new Date(`${fechaISO}T00:00:00-05:00`)
+      // Solo fecha
+      fullIsoString = `${fechaISO}T00:00:00`
     }
 
-    // Formateo final bonito, usando la zona horaria de Colombia
-    const options = {
-      timeZone: 'America/Bogota',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
+    const date = parseISO(fullIsoString)
+
+    if (isNaN(date.getTime())) {
+      return 'Fecha inválida'
     }
 
-    // Reemplazar la coma por " - " como te gusta
-    return date.toLocaleString('es-CO', options).replace(',', ' -')
-
+    // Formato final bonito en español y zona horaria de Colombia
+    return format(date, "d MMM yyyy - hh:mm a", {
+      locale: es,
+      timeZone: 'America/Bogota'
+    })
   } catch (error) {
     console.error('Error formateando fecha:', error, { fechaISO, horaString })
     return 'Fecha inválida'
@@ -477,7 +477,6 @@ function verPreviewImagen(url) {
   }
 }
 </script>
-
 
 <style scoped>
 * {

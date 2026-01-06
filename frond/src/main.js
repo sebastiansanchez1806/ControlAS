@@ -2,20 +2,47 @@ import './assets/main.css'
 
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-// 1. Importa el plugin de persistencia
-import piniaPluginPersistedstate from 'pinia-plugin-persistedstate' 
+
+// === PINIA PERSISTENCE ===
+import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+
+// === TOASTIFICATION (para notificaciones en tiempo real) ===
+import Toast from "vue-toastification"
+import "vue-toastification/dist/index.css"
 
 import App from './App.vue'
 import router from './router/index'
-// import Login from './components/login.vue' // No es necesario importarlo aquí si no lo usas directamente en main.js
 
 const app = createApp(App)
-const pinia = createPinia() // Crea la instancia de Pinia
-app.config.devtools = false;
-// 2. Usa el plugin con tu instancia de Pinia
-pinia.use(piniaPluginPersistedstate)
 
-app.use(pinia) // Usa la instancia de Pinia con el plugin
+// === CONFIGURACIÓN GLOBAL ===
+app.config.devtools = false // Desactivas las devtools como querías
+
+// === PINIA ===
+const pinia = createPinia()
+pinia.use(piniaPluginPersistedstate) // ← Activa la persistencia en todos tus stores
+app.use(pinia)
+
+// === ROUTER ===
 app.use(router)
+
+// === TOASTIFICATION (configuración bonita y funcional) ===
+app.use(Toast, {
+  transition: "Vue-Toastification__bounce",
+  maxToasts: 5,
+  newestOnTop: true,
+  position: "top-right",
+  timeout: 4000,
+  closeOnClick: true,
+  pauseOnFocusLoss: true,
+  pauseOnHover: true,
+  draggable: true,
+  draggablePercent: 0.6,
+  showCloseButtonOnHover: false,
+  hideProgressBar: false,
+  closeButton: "button",
+  icon: true,
+  rtl: false
+})
 
 app.mount('#app')

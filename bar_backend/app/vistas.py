@@ -5,14 +5,16 @@ from email.mime.text import MIMEText
 from multiprocessing import get_context
 import os
 import pytz
+from app.websockets import manager
 import secrets
 from passlib.context import CryptContext
 from app.correo import enviar_email_tarea
 from app.send_email import send_email 
 import smtplib
+from app.websockets import notify_bar
 from sqlite3 import IntegrityError
 from typing import Dict, List, Optional
-from fastapi import APIRouter, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, File, Form, Query, Request, UploadFile, WebSocket
 from sqlalchemy import desc, func
 from sqlalchemy.exc import OperationalError
 from app import schemas
@@ -168,7 +170,7 @@ def obtener_bares_por_dueno(dueno_id: int, db: Session = Depends(get_db)):
     }
 
 @router.post("/crea_bares", response_model=dict)
-def crear_bar(bar: BarCreate, db: Session = Depends(get_db)):
+async def crear_bar(bar: BarCreate, db: Session = Depends(get_db)):  # ← async para await notify_bar
     imagen_url = subir_imagen_a_cloudinary(bar.imagen, carpeta="bares")
     nuevo_bar = Bar(
         nombre=bar.nombre,
@@ -180,6 +182,23 @@ def crear_bar(bar: BarCreate, db: Session = Depends(get_db)):
     db.add(nuevo_bar)
     db.commit()
     db.refresh(nuevo_bar)
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=nuevo_bar.id,  # Enviamos al nuevo bar (aunque aún no haya nadie conectado, es correcto)
+        event_type="nuevo_bar_creado",
+        data={
+            "id": nuevo_bar.id,
+            "nombre": nuevo_bar.nombre,
+            "ubicacion": nuevo_bar.ubicacion,
+            "imagen": nuevo_bar.imagen,
+            "tipo": nuevo_bar.tipo,
+            "dueno_id": nuevo_bar.dueno_id
+        }
+    )
+    # Opcional: también notificar a todos los bares del dueño (si quieres que otros bares lo sepan)
+    # Pero con uno basta por ahora.
+
     return {
         "mensaje": "Bar creado exitosamente",
         "bar": {
@@ -206,12 +225,13 @@ def info_dueno(dueno_id: int, db: Session = Depends(get_db)):
 
 # 5. ELIMINAR BAR (CRÍTICO - con todas las imágenes)
 @router.delete("/bares_eliminar/{bar_id}", response_model=dict)
-def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
+async def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):  # ← async
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
     if not bar:
         raise HTTPException(status_code=404, detail="Bar no encontrado")
     
     nombre_bar = bar.nombre
+    dueno_id = bar.dueno_id  # Guardamos para notificar correctamente
     
     try:
         print(f"\n🗑️ ELIMINANDO BAR: {nombre_bar} (ID: {bar_id})")
@@ -240,7 +260,6 @@ def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
         if dueno:
             cantidad_bares = db.query(Bar).filter(Bar.dueno_id == dueno.id).count()
             
-            # Si este es el único bar, eliminar las mujeres asociadas al dueño
             if cantidad_bares == 1:
                 mujeres = db.query(Mujer).filter(Mujer.dueno_id == dueno.id).all()
                 print(f"   💃 Eliminando fotos de {len(mujeres)} mujeres (último bar del dueño)...")
@@ -268,6 +287,23 @@ def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
         
         print(f"✅ Bar '{nombre_bar}' y TODAS sus imágenes eliminadas exitosamente\n")
         
+        # === NOTIFICACIÓN EN TIEMPO REAL ===
+        # Notificamos a TODOS los bares del dueño (porque la lista de bares del dueño cambió)
+        # Pero como no tenemos un "canal global por dueño", una buena práctica es notificar a cada bar restante
+        # Alternativa simple: notificar al bar eliminado (aunque ya no exista, los clientes conectados a él lo recibirán antes de desconectarse)
+        await notify_bar(
+            bar_id=bar_id,  # Los clientes conectados a este bar_id recibirán el mensaje antes de que se cierre la conexión
+            event_type="bar_eliminado",
+            data={
+                "bar_id": bar_id,
+                "nombre": nombre_bar,
+                "mensaje": f"El bar '{nombre_bar}' ha sido eliminado permanentemente."
+            }
+        )
+        
+        # Opcional: también podrías notificar a otros bares del mismo dueño si quieres actualizar su vista general
+        # Pero con el mensaje al bar_id eliminado es suficiente por ahora.
+
         return {
             "mensaje": f"Bar '{nombre_bar}' y todas sus imágenes eliminadas exitosamente",
             "detalles": {
@@ -283,9 +319,8 @@ def eliminar_bar(bar_id: int, db: Session = Depends(get_db)):
         print(f"❌ ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al eliminar: {str(e)}")
 
-
 @router.put("/bares_actualizar/{bar_id}", response_model=dict)
-def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db)):
+async def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db)):  # ← async
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
     if not bar:
         raise HTTPException(status_code=404, detail="No se encontró un bar con ese ID")
@@ -300,6 +335,18 @@ def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db))
     db.commit()
     db.refresh(bar)
 
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="bar_actualizado",
+        data={
+            "id": bar.id,
+            "nombre": bar.nombre,
+            "ubicacion": bar.ubicacion,
+            "imagen": bar.imagen
+        }
+    )
+
     return {
         "mensaje": "Bar actualizado exitosamente",
         "bar": {
@@ -312,8 +359,7 @@ def editar_bar(bar_id: int, datos_bar: BarUpdate, db: Session = Depends(get_db))
     }
 
 @router.post("/mujeres", response_model=MujerOut)
-def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
-    # Validación extra
+async def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):  # ← async
     if not mujer.fecha_examen:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -325,13 +371,12 @@ def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
             detail="Debes subir la foto o PDF del examen médico"
         )
 
-    # SUBIR IMÁGENES A CLOUDINARY
     foto_url = subir_imagen_a_cloudinary(mujer.foto, carpeta="mujeres/fotos")
     foto_examen_url = subir_imagen_a_cloudinary(mujer.foto_examen, carpeta="mujeres/examenes")
 
     nueva_mujer = Mujer(
         nombre=mujer.nombre,
-        fecha_agregado=datetime.now(COLOMBIA_TZ),  # ← CORREGIDO: era utcnow()
+        fecha_agregado=datetime.now(COLOMBIA_TZ),
         documento=mujer.documento,
         telefono=mujer.telefono,
         foto=foto_url,
@@ -344,10 +389,27 @@ def crear_mujer(mujer: MujerCreate, db: Session = Depends(get_db)):
     db.add(nueva_mujer)
     db.commit()
     db.refresh(nueva_mujer)
-    return nueva_mujer  
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    # Como las mujeres pertenecen al dueño, no al bar, no tenemos bar_id directo.
+    # Opción simple: buscar un bar del dueño y notificar ahí (los clientes del dueño están conectados a sus bares)
+    bar_del_dueno = db.query(Bar).filter(Bar.dueno_id == mujer.dueno_id).first()
+    if bar_del_dueno:
+        await notify_bar(
+            bar_id=bar_del_dueno.id,
+            event_type="mujer_agregada",
+            data={
+                "id": nueva_mujer.id,
+                "nombre": nueva_mujer.nombre,
+                "foto": nueva_mujer.foto,
+                "fecha_examen": nueva_mujer.fecha_examen.strftime("%d/%m/%Y") if nueva_mujer.fecha_examen else None
+            }
+        )
+
+    return nueva_mujer
 
 @router.delete("/mujeres_eliminar/{mujer_id}", response_model=dict)
-def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):
+async def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):  # ← async
     mujer = db.query(Mujer).filter(Mujer.id == mujer_id).first()
     if not mujer:
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
@@ -358,11 +420,26 @@ def eliminar_mujer(mujer_id: int, db: Session = Depends(get_db)):
     if mujer.foto_examen:
         eliminar_imagen_de_cloudinary(mujer.foto_examen)
     
+    dueno_id = mujer.dueno_id  # Guardamos antes de borrar
+    
     db.delete(mujer)
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    bar_del_dueno = db.query(Bar).filter(Bar.dueno_id == dueno_id).first()
+    if bar_del_dueno:
+        await notify_bar(
+            bar_id=bar_del_dueno.id,
+            event_type="mujer_eliminada",
+            data={
+                "mujer_id": mujer_id,
+                "nombre": mujer.nombre
+            }
+        )
+    
     return {"mensaje": "Mujer eliminada correctamente"}
 @router.put("/mujeres/{mujer_id}", response_model=MujerOut)
-def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depends(get_db)):
+async def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depends(get_db)):  # ← async
     mujer = db.query(Mujer).filter(Mujer.id == mujer_id).first()
     if not mujer:
         raise HTTPException(status_code=404, detail="Mujer no encontrada")
@@ -372,19 +449,13 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
     
     # SUBIR IMÁGENES NUEVAS SI SE ENVÍAN
     if "foto" in update_data:
-        # Eliminar foto anterior
         if mujer.foto:
             eliminar_imagen_de_cloudinary(mujer.foto)
-        
-        # Subir nueva foto
         update_data["foto"] = subir_imagen_a_cloudinary(update_data["foto"], carpeta="mujeres/fotos")
     
     if "foto_examen" in update_data:
-        # Eliminar foto de examen anterior
         if mujer.foto_examen:
             eliminar_imagen_de_cloudinary(mujer.foto_examen)
-        
-        # Subir nueva foto de examen
         update_data["foto_examen"] = subir_imagen_a_cloudinary(update_data["foto_examen"], carpeta="mujeres/examenes")
     
     # Aplicar cambios
@@ -401,6 +472,21 @@ def editar_mujer(mujer_id: int, actualizacion: MujerUpdate, db: Session = Depend
         ).delete()
         db.commit()
         print(f"Notificaciones antiguas eliminadas ({deleted}) para {mujer.nombre} al renovar examen")
+    
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    bar_del_dueno = db.query(Bar).filter(Bar.dueno_id == mujer.dueno_id).first()
+    if bar_del_dueno:
+        await notify_bar(
+            bar_id=bar_del_dueno.id,
+            event_type="mujer_actualizada",
+            data={
+                "id": mujer.id,
+                "nombre": mujer.nombre,
+                "foto": mujer.foto,
+                "fecha_examen": mujer.fecha_examen.strftime("%d/%m/%Y") if mujer.fecha_examen else None,
+                "foto_examen": mujer.foto_examen
+            }
+        )
     
     return mujer
 
@@ -426,10 +512,12 @@ def obtener_administradores_por_bar(bar_id: int, db: Session = Depends(get_db)):
     return admins
 
 @router.delete("/administradores/{admin_id}", response_model=dict)
-def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)):
+async def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)):  # ← async
     admin = db.query(Administrador).filter(Administrador.id == admin_id).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
+    
+    bar_id = admin.bar_id  # Guardamos antes de borrar
     
     # Borrar foto de Cloudinary
     if admin.foto:
@@ -437,13 +525,27 @@ def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)):
     
     db.delete(admin)
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    if bar_id:
+        await notify_bar(
+            bar_id=bar_id,
+            event_type="administrador_eliminado",
+            data={
+                "admin_id": admin_id,
+                "nombre": admin.nombre
+            }
+        )
+    
     return {"mensaje": "Administrador eliminado correctamente"}
 
 @router.put("/administradores/{admin_id}", response_model=AdministradorOut)
-def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Session = Depends(get_db)):
+async def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Session = Depends(get_db)):  # ← async
     admin = db.query(Administrador).filter(Administrador.id == admin_id).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
+    
+    bar_id = admin.bar_id  # Guardamos para notificar
     
     if datos.nombre is not None and datos.nombre != admin.nombre:
         if db.query(Dueno).filter(Dueno.nombre == datos.nombre).first():
@@ -463,13 +565,10 @@ def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Sess
     if datos.telefono is not None:
         admin.telefono = datos.telefono
     
-    # ACTUALIZAR FOTO (eliminar anterior y subir nueva)
+    # ACTUALIZAR FOTO
     if datos.foto is not None:
-        # Eliminar foto anterior
         if admin.foto:
             eliminar_imagen_de_cloudinary(admin.foto)
-        
-        # Subir nueva foto
         admin.foto = subir_imagen_a_cloudinary(datos.foto, carpeta="administradores")
     
     if datos.contraseña is not None:
@@ -478,12 +577,24 @@ def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Sess
     
     db.commit()
     db.refresh(admin)
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    if bar_id:
+        await notify_bar(
+            bar_id=bar_id,
+            event_type="administrador_actualizado",
+            data={
+                "id": admin.id,
+                "nombre": admin.nombre,
+                "foto": admin.foto,
+                "telefono": admin.telefono,
+                "correo": admin.correo
+            }
+        )
+    
     return admin
-
-
-
 @router.post("/tareas_crear", response_model=TareaOut)
-def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
+async def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):  # ← async
     try:
         administrador = db.query(Administrador).filter(
             Administrador.id == tarea.administrador_id
@@ -526,6 +637,21 @@ def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
             bar_nombre=bar_nombre,
             dueno_nombre=dueno_nombre
         )
+
+        # === NOTIFICACIÓN EN TIEMPO REAL ===
+        if administrador.bar_id:
+            await notify_bar(
+                bar_id=administrador.bar_id,
+                event_type="nueva_tarea",
+                data={
+                    "id": nueva_tarea.id,
+                    "descripcion": nueva_tarea.descripcion,
+                    "fecha": nueva_tarea.fecha.strftime("%d/%m/%Y"),
+                    "estado": nueva_tarea.estado,
+                    "administrador_id": administrador.id,
+                    "administrador_nombre": administrador.nombre
+                }
+            )
         
         return nueva_tarea
         
@@ -538,33 +664,69 @@ def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):
             status_code=500,
             detail=f"Error al crear la tarea: {str(e)}"
         )
-
 @router.get("/tareas_ver/{administrador_id}", response_model=List[TareaOut])
 def obtener_tareas_por_admin(administrador_id: int, db: Session = Depends(get_db)):
     tareas = db.query(Tarea).filter(Tarea.administrador_id == administrador_id).all()
     return tareas
 
 @router.put("/tareas/{tarea_id}/completar", response_model=TareaOut)
-def completar_tarea(tarea_id: int, db: Session = Depends(get_db)):
+async def completar_tarea(tarea_id: int, db: Session = Depends(get_db)):  # ← async
     tarea = db.query(Tarea).filter(Tarea.id == tarea_id).first()
     if not tarea:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"La tarea con el id {tarea_id} no fue encontrada."
         )
+    
+    # Obtener bar_id a través del administrador
+    administrador = db.query(Administrador).filter(Administrador.id == tarea.administrador_id).first()
+    bar_id = administrador.bar_id if administrador else None
+    
     tarea.estado = "completada"
-    tarea.fecha_completada = datetime.now(COLOMBIA_TZ).date()  # ← CORREGIDO: era date.today()
+    tarea.fecha_completada = datetime.now(COLOMBIA_TZ).date()
     db.commit()
     db.refresh(tarea)
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    if bar_id:
+        await notify_bar(
+            bar_id=bar_id,
+            event_type="tarea_completada",
+            data={
+                "id": tarea.id,
+                "descripcion": tarea.descripcion,
+                "fecha_completada": tarea.fecha_completada.strftime("%d/%m/%Y"),
+                "administrador_id": tarea.administrador_id
+            }
+        )
+    
     return tarea
 
 @router.delete("/tareas_eliminar/{tarea_id}", response_model=dict)
-def eliminar_tarea(tarea_id: int, db: Session = Depends(get_db)):
+async def eliminar_tarea(tarea_id: int, db: Session = Depends(get_db)):  # ← async
     tarea = db.query(Tarea).filter(Tarea.id == tarea_id).first()
     if not tarea:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    
+    # Obtener bar_id antes de borrar
+    administrador = db.query(Administrador).filter(Administrador.id == tarea.administrador_id).first()
+    bar_id = administrador.bar_id if administrador else None
+    
     db.delete(tarea)
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    if bar_id:
+        await notify_bar(
+            bar_id=bar_id,
+            event_type="tarea_eliminada",
+            data={
+                "tarea_id": tarea_id,
+                "descripcion": tarea.descripcion,
+                "estado_anterior": tarea.estado
+            }
+        )
+    
     return {"mensaje": "Tarea eliminada correctamente"}
 
 @router.get("/productos_por_bar/{bar_id}", response_model=List[ProductoOut])
@@ -589,12 +751,12 @@ async def get_tareas_pendientes_count(admin_id: int, db: Session = Depends(get_d
     return {"pendientes": count}
 
 @router.post("/crear_productos", response_model=ProductoOut)
-def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
+async def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):  # ← async
     # USAR CARPETA ESPECÍFICA DEL BAR
     imagen_url = subir_imagen_a_cloudinary(
         producto.imagen, 
         carpeta="productos",
-        bar_id=producto.bar_id  # ← PARÁMETRO AGREGADO
+        bar_id=producto.bar_id
     )
     
     nuevo_producto = Producto(
@@ -620,13 +782,29 @@ def crear_producto(producto: ProductoCreate, db: Session = Depends(get_db)):
         tipo=tipo_historial
     )
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=producto.bar_id,
+        event_type="producto_creado",
+        data={
+            "id": nuevo_producto.id,
+            "nombre": nuevo_producto.nombre,
+            "imagen": nuevo_producto.imagen,
+            "cantidad": nuevo_producto.cantidad,
+            "precio": float(nuevo_producto.precio)
+        }
+    )
     
     return nuevo_producto
+
 @router.delete("/eliminar_producto/{producto_id}")
-def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
+async def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):  # ← async
     producto_a_eliminar = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto_a_eliminar:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Producto no encontrado.")
+    
+    bar_id = producto_a_eliminar.bar_id  # Guardamos antes de cambiar estado
     
     # Borrar imagen de Cloudinary
     if producto_a_eliminar.imagen:
@@ -642,15 +820,24 @@ def eliminar_producto_logico(producto_id: int, db: Session = Depends(get_db)):
     tipo_historial = "elimino"
     agregar_a_historial(
         db=db,
-        bar_id=producto_a_eliminar.bar_id,
+        bar_id=bar_id,
         producto_id=producto_a_eliminar.id,
         mensaje=mensaje_historial,
         tipo=tipo_historial
     )
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="producto_eliminado",
+        data={
+            "id": producto_a_eliminar.id,
+            "nombre": producto_a_eliminar.nombre
+        }
+    )
     
     return {"mensaje": f"Producto '{producto_a_eliminar.nombre}' marcado como eliminado y su imagen borrada de la nube."}
-
 
 from fastapi import HTTPException, status
 import logging
@@ -680,26 +867,24 @@ def agregar_a_historial(
     db.add(nuevo)
     logger.info("Historial agregado a la sesión con db.add()")
     logger.info(f"ID del nuevo historial (aún sin commit): {nuevo.id}")
-
 @router.put("/editar_producto/{producto_id}", response_model=ProductoOut)
-def editar_producto(producto_id: int, producto_data: ProductoUpdate, db: Session = Depends(get_db)):
+async def editar_producto(producto_id: int, producto_data: ProductoUpdate, db: Session = Depends(get_db)):  # ← async
     producto = db.query(Producto).filter(Producto.id == producto_id).first()
     if not producto:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     
+    bar_id = producto.bar_id  # Guardamos para notificar
+    
     update_data = producto_data.dict(exclude_unset=True)
     
-    # SUBIR NUEVA IMAGEN CON CARPETA DEL BAR
+    # SUBIR NUEVA IMAGEN
     if "imagen" in update_data:
-        # Eliminar imagen anterior
         if producto.imagen:
             eliminar_imagen_de_cloudinary(producto.imagen)
-        
-        # Subir nueva imagen
         update_data["imagen"] = subir_imagen_a_cloudinary(
             update_data["imagen"], 
             carpeta="productos",
-            bar_id=producto.bar_id  # ← PARÁMETRO AGREGADO
+            bar_id=bar_id
         )
     
     for campo, valor in update_data.items():
@@ -707,10 +892,24 @@ def editar_producto(producto_id: int, producto_data: ProductoUpdate, db: Session
     
     db.commit()
     db.refresh(producto)
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="producto_actualizado",
+        data={
+            "id": producto.id,
+            "nombre": producto.nombre,
+            "imagen": producto.imagen,
+            "cantidad": producto.cantidad,
+            "precio": float(producto.precio)
+        }
+    )
+    
     return producto
 @router.patch("/actualizar_productos/{producto_id}")
 @router.put("/actualizar_productos/{producto_id}")
-def actualizar_producto(
+async def actualizar_producto(  # ← async
     producto_id: int,
     producto_update: schemas.ProductoUpdate,
     db: Session = Depends(get_db)
@@ -718,6 +917,8 @@ def actualizar_producto(
     producto_db = db.query(modelos.Producto).filter(modelos.Producto.id == producto_id).first()
     if not producto_db:
         raise HTTPException(status_code=404, detail=f"Producto con ID {producto_id} no encontrado.")
+    
+    bar_id = producto_db.bar_id  # Guardamos para notificar
     
     update_data = producto_update.dict(exclude_unset=True)
     
@@ -739,23 +940,20 @@ def actualizar_producto(
         
         agregar_a_historial(
             db=db,
-            bar_id=producto_db.bar_id,
+            bar_id=bar_id,
             producto_id=producto_db.id,
             mensaje=mensaje,
             tipo=tipo
         )
     
-    # SUBIR NUEVA IMAGEN CON CARPETA DEL BAR
+    # SUBIR NUEVA IMAGEN
     if "imagen" in update_data:
-        # Eliminar imagen anterior
         if producto_db.imagen:
             eliminar_imagen_de_cloudinary(producto_db.imagen)
-        
-        # Subir nueva imagen
         update_data["imagen"] = subir_imagen_a_cloudinary(
             update_data["imagen"], 
             carpeta="productos",
-            bar_id=producto_db.bar_id  # ← PARÁMETRO AGREGADO
+            bar_id=bar_id
         )
     
     for key, value in update_data.items():
@@ -763,8 +961,21 @@ def actualizar_producto(
     
     db.commit()
     db.refresh(producto_db)
-    return producto_db
 
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="producto_actualizado",
+        data={
+            "id": producto_db.id,
+            "nombre": producto_db.nombre,
+            "imagen": producto_db.imagen,
+            "cantidad": producto_db.cantidad,
+            "precio": float(producto_db.precio)
+        }
+    )
+    
+    return producto_db
 @router.get("/historial/bar/{bar_id}", response_model=List[HistorialSimpleOut])
 def obtener_historial_por_bar(
     bar_id: int, 
@@ -792,9 +1003,8 @@ def get_productos_para_facturar(bar_id: int, db: Session = Depends(get_db)):
         return []
     
     return productos
-
 @router.post("/generar_factura", response_model=schemas.FacturaOut, status_code=status.HTTP_201_CREATED)
-def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = Depends(get_db)):    
+async def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = Depends(get_db)):  # ← async
     db_bar = db.query(modelos.Bar).filter(modelos.Bar.id == factura_data.bar_id).first()
     db_admin = db.query(modelos.Administrador).filter(modelos.Administrador.id == factura_data.administrador_id).first()
     if not db_bar or not db_admin:
@@ -836,7 +1046,6 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
         
         total_ingresos += subtotal
         
-        # Imagen del producto (ya es URL de Cloudinary)
         detalles_para_email.append(schemas.DetalleFacturaOut(
             id=0,
             producto_id=db_producto.id,
@@ -861,13 +1070,12 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
                 precio=gasto_in.precio
             )
             gastos_modelos.append(gasto_modelo)
-            
             gastos_para_email.append(schemas.GastoOut(
                 id=0, nombre=gasto_in.nombre, precio=gasto_in.precio
             ))
     
     total_neto = total_ingresos - total_gastos
-    now_colombia = datetime.now(COLOMBIA_TZ)  # ← Ya correcto
+    now_colombia = datetime.now(COLOMBIA_TZ)
 
     nueva_factura = modelos.Factura(
         bar_id=factura_data.bar_id,
@@ -888,7 +1096,7 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == db_bar.dueno_id).first()
     if not db_dueno:
         print("Advertencia: Dueño del bar no encontrado. No se puede enviar el correo.")
-        return nueva_factura
+        # Seguimos aunque no haya dueño (la factura ya se creó)
     
     hora_colombia = nueva_factura.hora.replace(tzinfo=COLOMBIA_TZ)
     fecha_formateada = nueva_factura.fecha.strftime("%d/%m/%Y")
@@ -913,6 +1121,22 @@ def generar_factura(factura_data: schemas.FacturaCreateRequest, db: Session = De
         send_email(db_dueno.correo, asunto_correo, html_content)
     except Exception as e:
         print(f"Error al enviar el correo: {e}")
+
+    # === NOTIFICACIÓN EN TIEMPO REAL (LO MÁS IMPORTANTE) ===
+    await notify_bar(
+        bar_id=factura_data.bar_id,
+        event_type="nueva_factura",
+        data={
+            "id": nueva_factura.id,
+            "fecha": fecha_formateada,
+            "hora": hora_formateada,
+            "total_ingresos": float(nueva_factura.total_ingresos),
+            "total_gastos": float(nueva_factura.total_gastos),
+            "total_neto": float(nueva_factura.total_neto),
+            "admin_nombre": db_admin.nombre,
+            "admin_foto": db_admin.foto
+        }
+    )
     
     return nueva_factura
 
@@ -984,33 +1208,25 @@ def get_facturas_by_admin_and_bar(
         facturas_con_info.append(factura_dict)
 
     return facturas_con_info
-
 @router.post("/administradores", response_model=AdministradorOut)
-def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)):
-    # 1. Verificar si el nombre ya pertenece a un Dueño
+async def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)):  # ← async
     if db.query(Dueno).filter(Dueno.nombre == admin.nombre).first():
         raise HTTPException(status_code=400, detail="Ese nombre ya pertenece a un dueño")
 
-    # 2. Verificar si el correo ya existe
     if db.query(Administrador).filter(Administrador.correo == admin.correo).first():
         raise HTTPException(status_code=400, detail="Ya existe un administrador con ese correo electrónico.")
     
-    # 3. Verificar documento
     if db.query(Administrador).filter(Administrador.documento == admin.documento).first():
         raise HTTPException(status_code=400, detail="Ya existe un administrador con ese documento.")
     
-    # 4. Generar ID
     max_id_dueno = db.query(func.max(Dueno.id)).scalar() or 0
     max_id_admin = db.query(func.max(Administrador.id)).scalar() or 0
     nuevo_id = max(max_id_dueno, max_id_admin) + 1
 
-    # 5. Hashear contraseña
     hashed_password = pwd_context.hash(admin.contraseña)
 
-    # SUBIR FOTO DEL ADMINISTRADOR A CLOUDINARY
     foto_url = subir_imagen_a_cloudinary(admin.foto, carpeta="administradores")
 
-    # 6. Crear administrador
     nuevo_admin = Administrador(
         id=nuevo_id,
         nombre=admin.nombre,
@@ -1025,8 +1241,21 @@ def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db
     db.add(nuevo_admin)
     db.commit()
     db.refresh(nuevo_admin)
-    return nuevo_admin
 
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=admin.bar_id,
+        event_type="administrador_creado",
+        data={
+            "id": nuevo_admin.id,
+            "nombre": nuevo_admin.nombre,
+            "foto": nuevo_admin.foto,
+            "telefono": nuevo_admin.telefono,
+            "correo": nuevo_admin.correo
+        }
+    )
+
+    return nuevo_admin
 @router.get("/bar_tipo/{bar_id}", response_model=BarOut)
 async def obtener_bar(bar_id: int, db: Session = Depends(get_db)):
     """
@@ -1106,7 +1335,7 @@ def verificar_existencia_dueno(db: Session = Depends(get_db)):
     return {"existe_dueno": bool(dueno)}
 
 @router.put("/dueno/{dueno_id}", response_model=schemas.DuenoOut)
-def update_dueno_data(
+async def update_dueno_data(  # ← async
     dueno_id: int, 
     dueno_update: schemas.DuenoUpdate, 
     db: Session = Depends(get_db)
@@ -1122,8 +1351,24 @@ def update_dueno_data(
     
     db.commit()
     db.refresh(db_dueno)
-    return db_dueno
 
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    # Notificamos a TODOS los bares del dueño
+    bares_del_dueno = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
+    for bar in bares_del_dueno:
+        await notify_bar(
+            bar_id=bar.id,
+            event_type="dueno_actualizado",
+            data={
+                "dueno_id": db_dueno.id,
+                "nombre": db_dueno.nombre,
+                "telefono": db_dueno.telefono,
+                "correo": db_dueno.correo,
+                "imagen": db_dueno.imagen
+            }
+        )
+
+    return db_dueno
 @router.put("/dueno/{dueno_id}/password")
 def update_dueno_password(
     dueno_id: int,
@@ -1140,7 +1385,7 @@ def update_dueno_password(
     return {"message": "Contraseña actualizada exitosamente"}
 
 @router.put("/dueno/{dueno_id}/photo")
-def update_dueno_photo(
+async def update_dueno_photo(  # ← async
     dueno_id: int,
     photo_data: schemas.PhotoUpdate,
     db: Session = Depends(get_db)
@@ -1159,8 +1404,21 @@ def update_dueno_photo(
     
     db.commit()
     db.refresh(db_dueno)
-    return {"message": "Imagen de perfil actualizada exitosamente", "photoUrl": db_dueno.imagen}
 
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    # Notificamos a todos los bares del dueño
+    bares_del_dueno = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
+    for bar in bares_del_dueno:
+        await notify_bar(
+            bar_id=bar.id,
+            event_type="dueno_foto_actualizada",
+            data={
+                "dueno_id": db_dueno.id,
+                "imagen": db_dueno.imagen
+            }
+        )
+    
+    return {"message": "Imagen de perfil actualizada exitosamente", "photoUrl": db_dueno.imagen}
 def send_email(to_email: str, subject: str, html_content: str):
     """Envía un correo electrónico con contenido HTML."""
     try:
@@ -1216,7 +1474,7 @@ async def delete_history_and_send_email_endpoint(bar_id: int, db: Session = Depe
 
     history_data_for_email = schemas.HistorialEmailData(
         bar_nombre=bar.nombre,
-        fecha_borrado=datetime.now(COLOMBIA_TZ).strftime('%d/%m/%Y %H:%M:%S'),  # ← CORREGIDO
+        fecha_borrado=datetime.now(COLOMBIA_TZ).strftime('%d/%m/%Y %H:%M:%S'),
         historial=[schemas.HistorialEmailItem.from_orm(item) for item in history_to_delete]
     )
     
@@ -1226,8 +1484,18 @@ async def delete_history_and_send_email_endpoint(bar_id: int, db: Session = Depe
     db.query(modelos.Historial).filter(modelos.Historial.bar_id == bar_id).delete(synchronize_session=False)
     db.commit()
 
-    return {"message": "Historial eliminado y copia enviada al correo del dueño."}
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="historial_eliminado",
+        data={
+            "bar_id": bar_id,
+            "bar_nombre": bar.nombre,
+            "mensaje": "El historial de movimientos ha sido limpiado y enviado por correo al dueño."
+        }
+    )
 
+    return {"message": "Historial eliminado y copia enviada al correo del dueño."}
 @router.post("/dueno/forgot-password")
 def forgot_password(request: schemas.ForgotPasswordRequest, db: Session = Depends(get_db)):
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.correo == request.correo).first()
@@ -1315,7 +1583,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
     return {"message": "Contraseña actualizada exitosamente."}
 
 @router.delete("/bares/{bar_id}/facturas")
-def delete_all_bar_invoices(bar_id: int, db: Session = Depends(get_db)):
+async def delete_all_bar_invoices(bar_id: int, db: Session = Depends(get_db)):  # ← async
     bar = db.query(Bar).filter(Bar.id == bar_id).first()
     if not bar:
         raise HTTPException(status_code=404, detail=f"Bar con ID {bar_id} no encontrado.")
@@ -1342,6 +1610,16 @@ def delete_all_bar_invoices(bar_id: int, db: Session = Depends(get_db)):
     db.query(ProductoEliminado).filter(ProductoEliminado.bar_id == bar_id).delete(synchronize_session=False)
 
     db.commit()
+
+    # === NOTIFICACIÓN EN TIEMPO REAL ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="limpieza_masiva_completada",
+        data={
+            "bar_id": bar_id,
+            "mensaje": "Se ha realizado una limpieza completa: todas las facturas y productos eliminados han sido borrados permanentemente."
+        }
+    )
 
     return {
         "mensaje": "Limpieza completa realizada: facturas, detalles, gastos, productos eliminados y backup borrados."
@@ -1654,6 +1932,9 @@ async def guardar_inventario_con_factura(
     db.add(nueva_factura_inv)
     db.flush()
     
+    productos_nuevos_creados = []
+    productos_aumentados = []
+    
     # PROCESAR AUMENTOS
     if aumentos:
         try:
@@ -1666,7 +1947,16 @@ async def guardar_inventario_con_factura(
                 if not prod:
                     continue
                 
+                cantidad_anterior = prod.cantidad
                 prod.cantidad += int(item['cantidad'])
+                
+                productos_aumentados.append({
+                    "id": prod.id,
+                    "nombre": prod.nombre,
+                    "cantidad_anterior": cantidad_anterior,
+                    "cantidad_nueva": prod.cantidad,
+                    "aumento": int(item['cantidad'])
+                })
                 
                 detalle = DetalleFacturaInventario(
                     factura_inventario_id=nueva_factura_inv.id,
@@ -1686,32 +1976,24 @@ async def guardar_inventario_con_factura(
         try:
             lista_nuevos = json.loads(nuevos)
             form_data = await request.form()
-            print(f"📦 Claves en FormData: {list(form_data.keys())}")
             
             for item in lista_nuevos:
                 index = item.get('index', 0)
                 imagen_url_nueva = None
                 
                 imagen_key = f'imagen_{index}'
-                print(f"🔍 Buscando clave: {imagen_key}")
                 
                 if imagen_key in form_data:
                     imagen_file = form_data[imagen_key]
-                    print(f"📷 Imagen encontrada: {imagen_file.filename}")
-                    
                     imagen_bytes = await imagen_file.read()
                     content_type = imagen_file.content_type or 'image/jpeg'
-                    
                     imagen_base64 = f"data:{content_type};base64,{base64.b64encode(imagen_bytes).decode('utf-8')}"
                     
-                    # SUBIR A CLOUDINARY CON CARPETA DEL BAR
                     imagen_url_nueva = subir_imagen_a_cloudinary(
                         imagen_base64, 
                         carpeta="productos",
-                        bar_id=bar_id  # ← PARÁMETRO AGREGADO
+                        bar_id=bar_id
                     )
-                else:
-                    print(f"⚠️ No se encontró imagen para índice {index}")
                 
                 nuevo_prod = Producto(
                     nombre=item['nombre'],
@@ -1724,6 +2006,14 @@ async def guardar_inventario_con_factura(
                 db.add(nuevo_prod)
                 db.flush()
                 
+                productos_nuevos_creados.append({
+                    "id": nuevo_prod.id,
+                    "nombre": nuevo_prod.nombre,
+                    "cantidad": nuevo_prod.cantidad,
+                    "precio": float(nuevo_prod.precio),
+                    "imagen": imagen_url_nueva
+                })
+                
                 detalle = DetalleFacturaInventario(
                     factura_inventario_id=nueva_factura_inv.id,
                     producto_id=nuevo_prod.id,
@@ -1734,8 +2024,6 @@ async def guardar_inventario_con_factura(
                     es_nuevo_producto=True
                 )
                 db.add(detalle)
-                
-                print(f"✅ Producto creado: {nuevo_prod.nombre} (ID: {nuevo_prod.id}) - Imagen: {'Sí' if imagen_url_nueva else 'No'}")
                 
         except json.JSONDecodeError as e:
             print(f"❌ Error decodificando JSON: {e}")
@@ -1755,12 +2043,26 @@ async def guardar_inventario_con_factura(
         db.rollback()
         print(f"❌ Error al commit: {e}")
         raise HTTPException(status_code=500, detail=f"Error guardando: {str(e)}")
+
+    # === NOTIFICACIÓN EN TIEMPO REAL (LO MEJOR) ===
+    await notify_bar(
+        bar_id=bar_id,
+        event_type="inventario_actualizado",
+        data={
+            "factura_inventario_id": nueva_factura_inv.id,
+            "tipo_operacion": tipo_op,
+            "tiene_pdf": bool(pdf_url),
+            "nuevos_productos": productos_nuevos_creados,
+            "productos_aumentados": productos_aumentados,
+            "total_nuevos": len(productos_nuevos_creados),
+            "total_aumentos": len(productos_aumentados)
+        }
+    )
     
     return {
         "mensaje": "Inventario actualizado con éxito",
         "factura_inventario_id": nueva_factura_inv.id
     }
-
 from fastapi.responses import RedirectResponse
 
 def create_tables_and_seed_data():
@@ -1863,13 +2165,17 @@ def actualizar_dueno(
 
     return db_dueno
 @router.delete("/duenos/{dueno_id}")
-def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
+async def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):  # ← async
     db_dueno = db.query(modelos.Dueno).filter(modelos.Dueno.id == dueno_id).first()
     if not db_dueno:
         raise HTTPException(status_code=404, detail="Dueño no encontrado")
     
     try:
         print(f"\n🗑️ ELIMINANDO DUEÑO: {db_dueno.nombre} (ID: {dueno_id})")
+        
+        # Guardamos los bares antes de eliminar
+        bares = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
+        bar_ids = [bar.id for bar in bares]
         
         # 1. ELIMINAR IMAGEN DEL DUEÑO
         if db_dueno.imagen:
@@ -1886,21 +2192,16 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
                 eliminar_imagen_de_cloudinary(mujer.foto_examen)
         
         # 3. ELIMINAR IMÁGENES DE TODOS LOS BARES Y SUS CONTENIDOS
-        bares = db.query(Bar).filter(Bar.dueno_id == dueno_id).all()
         print(f"   🏢 Eliminando {len(bares)} bares y su contenido...")
-        
         for bar in bares:
-            # Imagen del bar
             if bar.imagen:
                 eliminar_imagen_de_cloudinary(bar.imagen)
             
-            # Productos del bar
             productos = db.query(Producto).filter(Producto.bar_id == bar.id).all()
             for prod in productos:
                 if prod.imagen:
                     eliminar_imagen_de_cloudinary(prod.imagen)
             
-            # Administradores del bar
             admins = db.query(Administrador).filter(Administrador.bar_id == bar.id).all()
             for admin in admins:
                 if admin.foto:
@@ -1912,6 +2213,18 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
         db.commit()
         
         print(f"✅ Dueño '{db_dueno.nombre}' y TODOS sus datos eliminados\n")
+        
+        # === NOTIFICACIÓN EN TIEMPO REAL (CRÍTICA) ===
+        for bar_id in bar_ids:
+            await notify_bar(
+                bar_id=bar_id,
+                event_type="dueno_eliminado",
+                data={
+                    "dueno_id": dueno_id,
+                    "mensaje": "El dueño ha sido eliminado permanentemente. Todos los bares asociados han sido borrados.",
+                    "accion_sugerida": "cerrar_sesion"  # El frontend puede cerrar WS y redirigir
+                }
+            )
         
         return {
             "detail": "Dueño y todos sus datos asociados eliminados correctamente",
@@ -1926,7 +2239,6 @@ def eliminar_dueno(dueno_id: int, db: Session = Depends(get_db)):
         db.rollback()
         print(f"❌ ERROR: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al eliminar el dueño: {str(e)}")
-
 @router.get("/inventario/facturas/{bar_id}")
 async def obtener_facturas_inventario(
     bar_id: int,
@@ -2458,3 +2770,15 @@ def verificar_contraseña_gestor(
         raise HTTPException(status_code=401, detail="Contraseña incorrecta")
     
     return {"message": "Contraseña verificada exitosamente"}
+
+
+
+@router.websocket("/ws/{bar_id}")
+async def websocket_endpoint(websocket: WebSocket, bar_id: int):
+    await manager.connect(websocket, bar_id)
+    try:
+        while True:
+            # Mantener conexión viva (opcional: recibir ping)
+            await websocket.receive_text()
+    except Exception:
+        manager.disconnect(websocket, bar_id)
