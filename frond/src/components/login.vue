@@ -18,6 +18,7 @@
       </div>
     </div>
 
+    <!-- HEADER MEJORADO CON BOTONES DE NAVEGACIÓN -->
     <header class="header">
       <div class="header-content">
         <div class="logo-section">
@@ -26,147 +27,189 @@
           </div>
           <h1 class="brand-name">Control AS</h1>
         </div>
+        
+        <!-- BOTONES DE NAVEGACIÓN -->
+        <nav class="header-nav">
+          <button 
+            @click="setActiveView('login')"
+            :class="['nav-button', { active: activeView === 'login' }]"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            </svg>
+            <span>Iniciar Sesión</span>
+          </button>
+          
+          <button 
+            @click="setActiveView('about')"
+            :class="['nav-button', { active: activeView === 'about' }]"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
+            </svg>
+            <span>Sobre Nosotros</span>
+          </button>
+        </nav>
       </div>
     </header>
 
+    <!-- CONTENIDO PRINCIPAL CON RENDERIZADO CONDICIONAL -->
     <main class="main-content">
-      <div class="login-card" :class="{ shake: isShaking }">
-        <div class="card-glow"></div>
-        <div class="login-header">
-          <h2 class="login-title">Bienvenido de vuelta</h2>
-          <p class="login-subtitle">Accede a tu cuenta Control AS</p>
-        </div>
-
-        <form @submit.prevent="handleLogin" class="login-form">
-          <div class="user-type-selector">
-  <div class="selector-label">Iniciar sesión como:</div>
-  <div class="type-buttons">
-    <button
-      type="button"
-      class="type-button"
-      :class="{ active: userType === 'dueno' }"
-      @click="userType = 'dueno'"
-    >
-      <div class="button-icon">👔</div>
-      <span>Dueño</span>
-    </button>
-    <button
-      type="button"
-      class="type-button"
-      :class="{ active: userType === 'administrador' }"
-      @click="userType = 'administrador'"
-    >
-      <div class="button-icon">👨‍💼</div>
-      <span>Administrador</span>
-    </button>
-  </div>
-</div>
-          <div
-            class="input-group"
-            :class="{ focused: usernameFocused, filled: username }"
-          >
-            <label for="username" class="input-label">Usuario</label>
-            <input
-              id="username"
-              v-model="username"
-              type="text"
-              class="form-input"
-              @focus="usernameFocused = true"
-              @blur="usernameFocused = false"
-              required
-            />
-            <div class="input-border"></div>
-            <div class="input-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                />
-              </svg>
-            </div>
+      
+      <!-- VISTA DE LOGIN -->
+      <div v-if="activeView === 'login'" class="login-view">
+        <div class="login-card" :class="{ shake: isShaking }">
+          <div class="card-glow"></div>
+          <div class="login-header">
+            <h2 class="login-title">Bienvenido de vuelta</h2>
+            <p class="login-subtitle">Accede a tu cuenta Control AS</p>
           </div>
 
-          <div
-            class="input-group"
-            :class="{ focused: passwordFocused, filled: password }"
-          >
-            <label for="password" class="input-label">Contraseña</label>
-            <input
-              id="password"
-              v-model="password"
-              :type="showPassword ? 'text' : 'password'"
-              class="form-input"
-              @focus="passwordFocused = true"
-              @blur="passwordFocused = false"
-              required
-            />
-            <div class="input-border"></div>
-            <div class="input-icon">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"
-                />
-              </svg>
+          <form @submit.prevent="handleLogin" class="login-form">
+            <div class="user-type-selector">
+              <div class="selector-label">Iniciar sesión como:</div>
+              <div class="type-buttons">
+                <button
+                  type="button"
+                  class="type-button"
+                  :class="{ active: userType === 'dueno' }"
+                  @click="userType = 'dueno'"
+                >
+                  <div class="button-icon">👔</div>
+                  <span>Dueño</span>
+                </button>
+                <button
+                  type="button"
+                  class="type-button"
+                  :class="{ active: userType === 'administrador' }"
+                  @click="userType = 'administrador'"
+                >
+                  <div class="button-icon">👨‍💼</div>
+                  <span>Administrador</span>
+                </button>
+              </div>
             </div>
-            <button
-              type="button"
-              class="password-toggle"
-              @click="showPassword = !showPassword"
+            
+            <div
+              class="input-group"
+              :class="{ focused: usernameFocused, filled: username }"
             >
-              <svg v-if="showPassword" viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"
-                />
-              </svg>
-              <svg v-else viewBox="0 0 24 24" fill="currentColor">
-                <path
-                  d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.09L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.76,7.13 11.38,7 12,7Z"
-                />
-              </svg>
-            </button>
-          </div>
-          <div
-  v-if="userType === 'administrador'"
-  class="input-group"
-  :class="{ focused: barIdFocused, filled: barId }"
->
-  <label for="bar-id" class="input-label">ID del Local</label>
-  <input
-    id="bar-id"
-    v-model="barId"
-    type="number"
-    class="form-input"
-    @focus="barIdFocused = true"
-    @blur="barIdFocused = false"
-    required
-  />
-  <div class="input-border"></div>
-  <div class="input-icon">
-    <svg viewBox="0 0 24 24" fill="currentColor">
-      <path
-        d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
-      />
-    </svg>
-  </div>
-</div>
-          <button
-            type="submit"
-            class="login-button"
-            :class="{ loading: isLoading }"
-            :disabled="isLoading"
-          >
-            <span v-if="!isLoading" class="button-text">Iniciar Sesión</span>
-            <div v-else class="button-loader">
-              <div class="loader-dot"></div>
-              <div class="loader-dot"></div>
-              <div class="loader-dot"></div>
+              <label for="username" class="input-label">Usuario</label>
+              <input
+                id="username"
+                v-model="username"
+                type="text"
+                class="form-input"
+                @focus="usernameFocused = true"
+                @blur="usernameFocused = false"
+                required
+              />
+              <div class="input-border"></div>
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                  />
+                </svg>
+              </div>
             </div>
-          </button>
-          <router-link to="/recuperar" class="forgot-password-link"
-            >¿Olvidaste tu contraseña? 💫</router-link
-          >
-        </form>
 
+            <div
+              class="input-group"
+              :class="{ focused: passwordFocused, filled: password }"
+            >
+              <label for="password" class="input-label">Contraseña</label>
+              <input
+                id="password"
+                v-model="password"
+                :type="showPassword ? 'text' : 'password'"
+                class="form-input"
+                @focus="passwordFocused = true"
+                @blur="passwordFocused = false"
+                required
+              />
+              <div class="input-border"></div>
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"
+                  />
+                </svg>
+              </div>
+              <button
+                type="button"
+                class="password-toggle"
+                @click="showPassword = !showPassword"
+              >
+                <svg v-if="showPassword" viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12,9A3,3 0 0,0 9,12A3,3 0 0,0 12,15A3,3 0 0,0 15,12A3,3 0 0,0 12,9M12,17A5,5 0 0,1 7,12A5,5 0 0,1 12,7A5,5 0 0,1 17,12A5,5 0 0,1 12,17M12,4.5C7,4.5 2.73,7.61 1,12C2.73,16.39 7,19.5 12,19.5C17,19.5 21.27,16.39 23,12C21.27,7.61 17,4.5 12,4.5Z"
+                  />
+                </svg>
+                <svg v-else viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M11.83,9L15,12.16C15,12.11 15,12.05 15,12A3,3 0 0,0 12,9C11.94,9 11.89,9 11.83,9M7.53,9.8L9.08,11.35C9.03,11.56 9,11.77 9,12A3,3 0 0,0 12,15C12.22,15 12.44,14.97 12.65,14.92L14.2,16.47C13.53,16.8 12.79,17 12,17A5,5 0 0,1 7,12C7,11.21 7.2,10.47 7.53,9.8M2,4.27L4.28,6.55L4.73,7C3.08,8.3 1.78,10 1,12C2.73,16.39 7,19.5 12,19.5C13.55,19.5 15.03,19.2 16.38,18.66L16.81,19.09L19.73,22L21,20.73L3.27,3M12,7A5,5 0 0,1 17,12C17,12.64 16.87,13.26 16.64,13.82L19.57,16.75C21.07,15.5 22.27,13.86 23,12C21.27,7.61 17,4.5 12,4.5C10.6,4.5 9.26,4.75 8,5.2L10.17,7.35C10.76,7.13 11.38,7 12,7Z"
+                  />
+                </svg>
+              </button>
+            </div>
+            
+            <div
+              v-if="userType === 'administrador'"
+              class="input-group"
+              :class="{ focused: barIdFocused, filled: barId }"
+            >
+              <label for="bar-id" class="input-label">ID del Local</label>
+              <input
+                id="bar-id"
+                v-model="barId"
+                type="number"
+                class="form-input"
+                @focus="barIdFocused = true"
+                @blur="barIdFocused = false"
+                required
+              />
+              <div class="input-border"></div>
+              <div class="input-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"
+                  />
+                </svg>
+              </div>
+            </div>
+            
+            <button
+              type="submit"
+              class="login-button"
+              :class="{ loading: isLoading }"
+              :disabled="isLoading"
+            >
+              <span v-if="!isLoading" class="button-text">Iniciar Sesión</span>
+              <div v-else class="button-loader">
+                <div class="loader-dot"></div>
+                <div class="loader-dot"></div>
+                <div class="loader-dot"></div>
+              </div>
+            </button>
+            
+            <!-- ✅ SOLO SE MUESTRA SI userType ES 'dueno' -->
+            <router-link 
+              v-if="userType === 'dueno'" 
+              to="/recuperar" 
+              class="forgot-password-link"
+            >
+              ¿Olvidaste tu contraseña? 💫
+            </router-link>
+          </form>
+        </div>
       </div>
+
+      <!-- VISTA DE SOBRE NOSOTROS / CONTACTO -->
+      <div v-if="activeView === 'about'" class="about-view">
+        <sobre_nosotros />
+      </div>
+
     </main>
 
     <footer class="footer">
@@ -180,71 +223,74 @@
         <p>&copy; 2024 Control AS Bar. Todos los derechos reservados.</p>
       </div>
     </footer>
+
+    <!-- Modal de cuenta bloqueada -->
+    <teleport to="body">
+      <transition name="modal-fade">
+        <div
+          v-if="showPaymentBlockedModal"
+          class="payment-blocked-overlay"
+          @click.self="showPaymentBlockedModal = false"
+        >
+          <div class="payment-blocked-modal" @click.stop>
+            <button class="modal-close-btn" @click="showPaymentBlockedModal = false">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+              </svg>
+            </button>
+
+            <div class="blocked-icon">
+              <svg viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"/>
+              </svg>
+              <div class="lock-slash">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
+                  <path d="M3 3L21 21"/>
+                </svg>
+              </div>
+            </div>
+
+            <h2 class="modal-title">Cuenta Bloqueada</h2>
+            <p class="modal-subtitle">
+              Tu cuenta ha sido bloqueada por <span class="highlight">falta de pago</span>.
+            </p>
+
+            <div class="contact-card">
+              <p>Para reactivarla, comunícate con nosotros:</p>
+              <div class="contact-item whatsapp">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 5.44h-.005c-1.58-.315-3.017-1.042-4.137-2.183-2.218-2.26-2.218-5.297 0-7.557a4.84 4.84 0 0 1 3.61-1.615h.002c.913 0 1.783.363 2.428 1.01.645.647 1.008 1.518 1.008 2.432 0 2.36-1.922 4.282-4.29 4.282zM12.004 0C5.377 0 .003 5.374.003 12c0 2.098.543 4.09 1.504 5.82L.003 24l6.305-1.492c1.696.93 3.6 1.42 5.52 1.42 6.627 0 12-5.373 12-12 0-3.224-1.262-6.247-3.558-8.52C18.246 1.262 15.223.004 12.004.004z"/></svg>
+                <span>WhatsApp: <strong>+57 3213686373</strong></span>
+              </div>
+            </div>
+
+            <p class="modal-footer-text">Gracias por tu comprensión</p>
+
+            <button class="modal-understand-btn" @click="showPaymentBlockedModal = false">
+              Entendido
+            </button>
+          </div>
+        </div>
+      </transition>
+    </teleport>
   </div>
-  <!-- Modal personalizado de cuenta bloqueada por falta de pago -->
-<teleport to="body">
-  <transition name="modal-fade">
-    <div
-      v-if="showPaymentBlockedModal"
-      class="payment-blocked-overlay"
-      @click.self="showPaymentBlockedModal = false"
-    >
-      <div class="payment-blocked-modal" @click.stop>
-        <!-- Botón cerrar -->
-        <button class="modal-close-btn" @click="showPaymentBlockedModal = false">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12"/>
-          </svg>
-        </button>
-
-        <!-- Icono de bloqueo grande -->
-        <div class="blocked-icon">
-          <svg viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10A2,2 0 0,1 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z"/>
-          </svg>
-          <div class="lock-slash">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
-              <path d="M3 3L21 21"/>
-            </svg>
-          </div>
-        </div>
-
-        <h2 class="modal-title">Cuenta Bloqueada</h2>
-        <p class="modal-subtitle">
-          Tu cuenta ha sido bloqueada por <span class="highlight">falta de pago</span>.
-        </p>
-
-        <div class="contact-card">
-          <p>Para reactivarla, comunícate con nosotros:</p>
-          <div class="contact-item whatsapp">
-            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 5.44h-.005c-1.58-.315-3.017-1.042-4.137-2.183-2.218-2.26-2.218-5.297 0-7.557a4.84 4.84 0 0 1 3.61-1.615h.002c.913 0 1.783.363 2.428 1.01.645.647 1.008 1.518 1.008 2.432 0 2.36-1.922 4.282-4.29 4.282zM12.004 0C5.377 0 .003 5.374.003 12c0 2.098.543 4.09 1.504 5.82L.003 24l6.305-1.492c1.696.93 3.6 1.42 5.52 1.42 6.627 0 12-5.373 12-12 0-3.224-1.262-6.247-3.558-8.52C18.246 1.262 15.223.004 12.004.004z"/></svg>
-            <span>WhatsApp: <strong>+57 3213686373
-            </strong></span>
-          </div>
-        </div>
-
-        <p class="modal-footer-text">Gracias por tu comprensión</p>
-
-        <button class="modal-understand-btn" @click="showPaymentBlockedModal = false">
-          Entendido
-        </button>
-      </div>
-    </div>
-  </transition>
-</teleport>
 </template>
 
 <script>
-import { ref, onMounted } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import Swal from 'sweetalert2';
 import { useUserStore } from '@/stores/user';
 import { useAdminStore } from '@/stores/admin';
 import { API_BASE_URL } from '../config/api';
+import sobre_nosotros from './sobre_nosotros.vue';
 
 export default {
   name: 'Control AS',
+  components: {
+    sobre_nosotros
+  },
   setup() {
+    const activeView = ref('login');
     const userType = ref('dueno');
     const barId = ref('');
     const barIdFocused = ref(false);
@@ -259,6 +305,11 @@ export default {
     const userStore = useUserStore();
     const adminStore = useAdminStore();
     const showPaymentBlockedModal = ref(false);
+
+    const setActiveView = (view) => {
+      activeView.value = view;
+    };
+
     const handleLogin = async () => {
       if (!username.value || !password.value) {
         isShaking.value = true;
@@ -303,7 +354,6 @@ export default {
           body: JSON.stringify(requestBody),
         });
 
-        // LOGIN EXITOSO
         if (response.ok) {
           const data = await response.json();
 
@@ -330,33 +380,24 @@ export default {
             });
             router.push('/administrador_parte');
           }
-        } 
-        // ERRORES DE AUTENTICACIÓN
-        else {
+        } else {
           const errorData = await response.json();
-          let title = "Error";
-          let text = errorData.detail || "Ocurrió un error inesperado.";
-          let icon = "error";
 
-          // CUENTA BLOQUEADA POR FALTA DE PAGO (403)
           if (response.status === 403) {
-              showPaymentBlockedModal.value = true;
-              isShaking.value = true;
-              setTimeout(() => (isShaking.value = false), 600);
-              return; // Importante: salir sin seguir procesando errores
-          }
-          // OTROS ERRORES (401, 404, etc.)
-          else {
-            title = response.status === 401 ? "Credenciales Incorrectas" : "Error de Acceso";
+            showPaymentBlockedModal.value = true;
+            isShaking.value = true;
+            setTimeout(() => (isShaking.value = false), 600);
+            return;
+          } else {
+            const title = response.status === 401 ? "Credenciales Incorrectas" : "Error de Acceso";
             await Swal.fire({
-              icon,
+              icon: 'error',
               title,
-              text,
+              text: errorData.detail || "Ocurrió un error inesperado.",
               customClass: { popup: 'swal2-dark-popup', confirmButton: 'swal2-confirm-button' },
             });
           }
 
-          // Animación de error
           isShaking.value = true;
           setTimeout(() => (isShaking.value = false), 600);
         }
@@ -386,6 +427,8 @@ export default {
       barId,
       barIdFocused,
       showPaymentBlockedModal,
+      activeView,
+      setActiveView,
     };
   },
 };
@@ -1587,4 +1630,232 @@ export default {
     opacity: 1;
   }
 }
+</style>
+<style scoped>
+/* ========================================
+   🆕 ESTILOS NUEVOS PARA EL HEADER MEJORADO
+   ======================================== */
+
+/* Navegación del header */
+.header-nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.nav-button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50px;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.nav-button svg {
+  width: 20px;
+  height: 20px;
+  transition: transform 0.3s ease;
+}
+
+.nav-button::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(45deg, #ff69b4, #1e90ff);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  border-radius: 50px;
+}
+
+.nav-button span {
+  position: relative;
+  z-index: 1;
+}
+
+.nav-button:hover {
+  border-color: rgba(255, 105, 180, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 5px 20px rgba(255, 105, 180, 0.3);
+}
+
+.nav-button:hover svg {
+  transform: scale(1.1);
+}
+
+/* 🎯 Botón activo - ESTILO CLAVE */
+.nav-button.active {
+  background: linear-gradient(45deg, #ff69b4, #1e90ff);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 8px 25px rgba(255, 105, 180, 0.4);
+}
+
+.nav-button.active::before {
+  opacity: 1;
+}
+
+.nav-button.active svg {
+  transform: scale(1.15);
+}
+
+
+
+@keyframes fadeInView {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive para botones de navegación */
+@media (max-width: 768px) {
+  .header-nav {
+    flex-direction: column;
+    gap: 0.6rem;
+    width: 100%;
+  }
+  
+  .nav-button {
+    width: 100%;
+    justify-content: center;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .nav-button span {
+    display: none;
+  }
+  
+  .nav-button {
+    padding: 0.6rem;
+    min-width: 45px;
+    justify-content: center;
+  }
+  
+  .header-nav {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+</style>
+<style scoped>
+
+/* ========================================
+   🔧 FIX PARA CENTRADO EN MOBILE
+   ======================================== */
+
+/* Asegurar que el contenedor principal no tenga overflow horizontal */
+.login-container {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+/* Centrado perfecto del main-content */
+.main-content {
+  width: 100%;
+  max-width: 100%;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+/* Contenedores de vistas con ancho completo */
+.login-view,
+.about-view {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  animation: fadeInView 0.5s ease-out;
+}
+
+@keyframes fadeInView {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Ajustes específicos para móviles */
+@media (max-width: 768px) {
+  .main-content {
+    padding: 1rem;
+    justify-content: center;
+    align-items: center;
+  }
+  
+  .login-view {
+    width: 100%;
+    max-width: 100%;
+  }
+  
+  .login-card {
+    margin: 0 auto;
+    max-width: 100%;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .main-content {
+    padding: 0.5rem;
+  }
+  
+  .login-card {
+    padding: 1.5rem 1rem;
+    margin: 0;
+    width: 100%;
+    max-width: 100%;
+  }
+  
+  /* Asegurar que el formulario también esté centrado */
+  .login-form {
+    width: 100%;
+  }
+  
+  /* Ajustar inputs en móvil */
+  .form-input {
+    width: 100%;
+    font-size: 16px; /* Previene zoom en iOS */
+  }
+}
+
+/* Fix para pantallas muy pequeñas */
+@media (max-width: 360px) {
+  .login-card {
+    padding: 1rem 0.75rem;
+  }
+  
+  .type-button {
+    max-width: 75px;
+    padding: 0.5rem;
+  }
+  
+  .button-icon {
+    font-size: 1rem;
+  }
+  
+  .type-button span {
+    font-size: 0.65rem;
+  }
+} 
 </style>
