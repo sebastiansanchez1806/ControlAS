@@ -110,7 +110,11 @@ class Administrador(Base):
     telefono = Column(String(50), nullable=False)
     contraseña = Column(String(100), nullable=False)
     bar_id = Column(Integer, ForeignKey("bares.id"))
-    
+    # PERMISOS
+    permiso_ver_productos = Column(Boolean, default=True, nullable=False)  # 1. Ver productos del bar
+    permiso_agregar_inventario = Column(Boolean, default=True, nullable=False)  # 2. Agregar o sumar al inventario
+    permiso_generar_facturas = Column(Boolean, default=True, nullable=False)  # 3. Generar facturas diarias
+    permiso_agregar_personal_femenino = Column(Boolean, default=True, nullable=False)  # 4. Agregar personal femenino
     bar = relationship("Bar", back_populates="administradores")
     
     # ✅ RELACIONES CON CASCADE - Eliminación en cascada

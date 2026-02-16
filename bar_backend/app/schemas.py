@@ -151,18 +151,24 @@ class LoginResponse(BaseModel):
     bar_id: Optional[int] = None
     dueno_id: Optional[int] = None
     bar_nombre: Optional[str] = None
+    permisos: Optional[dict] = None   # ← nuevo
 
 # --- Esquemas de Administrador ---
 class AdministradorBase(BaseModel):
     nombre: str
     correo: Optional[str] = None
-    documento: Optional[str] = None  # ✅ NUEVO CAMPO
+    documento: Optional[str] = None # ✅ NUEVO CAMPO
     foto: Optional[str] = None
     fecha_agregado: Optional[date] = None
     telefono: str
     contraseña: str
     bar_id: Optional[int] = None
-
+    
+    # NUEVOS PERMISOS (default True)
+    permiso_ver_productos: Optional[bool] = True
+    permiso_agregar_inventario: Optional[bool] = True
+    permiso_generar_facturas: Optional[bool] = True
+    permiso_agregar_personal_femenino: Optional[bool] = True
 class AdministradorOut(AdministradorBase):
     id: int
     class Config:
@@ -171,12 +177,18 @@ class AdministradorOut(AdministradorBase):
 class AdministradorCreate(BaseModel):
     nombre: str
     correo: str
-    documento: str  # ✅ NUEVO CAMPO (requerido al crear)
+    documento: str # ✅ NUEVO CAMPO (requerido al crear)
     foto: Optional[str] = None
     fecha_agregado: Optional[date] = None
     telefono: str
     contraseña: str
     bar_id: int
+    
+    # NUEVOS PERMISOS (opcionales, default True)
+    permiso_ver_productos: Optional[bool] = True
+    permiso_agregar_inventario: Optional[bool] = True
+    permiso_generar_facturas: Optional[bool] = True
+    permiso_agregar_personal_femenino: Optional[bool] = True
 
 class AdministradorUpdate(BaseModel):
     nombre: Optional[str] = None
@@ -184,8 +196,13 @@ class AdministradorUpdate(BaseModel):
     contraseña: Optional[str] = None
     foto: Optional[str] = None
     correo: Optional[str] = None
-    documento: Optional[str] = None  # ✅ NUEVO CAMPO (opcional al actualizar)
-
+    documento: Optional[str] = None # ✅ NUEVO CAMPO (opcional al actualizar)
+    
+    # NUEVOS PERMISOS (opcionales para actualización)
+    permiso_ver_productos: Optional[bool] = None
+    permiso_agregar_inventario: Optional[bool] = None
+    permiso_generar_facturas: Optional[bool] = None
+    permiso_agregar_personal_femenino: Optional[bool] = None
 
 # --- Esquemas de Tarea ---
 class TareaBase(BaseModel):

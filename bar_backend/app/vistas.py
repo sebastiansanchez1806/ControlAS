@@ -145,7 +145,15 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
             foto=administrador.foto,
             bar_id=administrador.bar_id,
             dueno_id=dueno_id,
-            bar_nombre=bar_nombre
+            bar_nombre=bar_nombre,
+            # ── AGREGAR ESTO ──
+            permisos={                          # ← nuevo campo opcional
+                "ver_productos": administrador.permiso_ver_productos,
+                "agregar_inventario": administrador.permiso_agregar_inventario,
+                "generar_facturas": administrador.permiso_generar_facturas,
+                "agregar_personal_femenino": administrador.permiso_agregar_personal_femenino
+            }
+
         )
 
 @router.get("/bares/dueno/{dueno_id}", response_model=dict)
@@ -540,44 +548,53 @@ async def eliminar_administrador(admin_id: int, db: Session = Depends(get_db)): 
     return {"mensaje": "Administrador eliminado correctamente"}
 
 @router.put("/administradores/{admin_id}", response_model=AdministradorOut)
-async def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Session = Depends(get_db)):  # ← async
+async def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db: Session = Depends(get_db)): # ← async
     admin = db.query(Administrador).filter(Administrador.id == admin_id).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Administrador no encontrado")
-    
-    bar_id = admin.bar_id  # Guardamos para notificar
-    
+  
+    bar_id = admin.bar_id # Guardamos para notificar
+  
     if datos.nombre is not None and datos.nombre != admin.nombre:
         if db.query(Dueno).filter(Dueno.nombre == datos.nombre).first():
             raise HTTPException(status_code=400, detail="Ese nombre ya pertenece a un dueño")
         admin.nombre = datos.nombre
-    
+  
     if datos.correo is not None and datos.correo != admin.correo:
         if db.query(Administrador).filter(Administrador.correo == datos.correo).filter(Administrador.id != admin_id).first():
             raise HTTPException(status_code=400, detail="Ese correo ya está registrado.")
         admin.correo = datos.correo
-    
+  
     if datos.documento is not None and datos.documento != admin.documento:
         if db.query(Administrador).filter(Administrador.documento == datos.documento).filter(Administrador.id != admin_id).first():
             raise HTTPException(status_code=400, detail="Ese documento ya está registrado.")
         admin.documento = datos.documento
-    
+  
     if datos.telefono is not None:
         admin.telefono = datos.telefono
-    
+  
     # ACTUALIZAR FOTO
     if datos.foto is not None:
         if admin.foto:
             eliminar_imagen_de_cloudinary(admin.foto)
         admin.foto = subir_imagen_a_cloudinary(datos.foto, carpeta="administradores")
-    
+  
     if datos.contraseña is not None:
         hashed_password = pwd_context.hash(datos.contraseña)
         admin.contraseña = hashed_password
-    
+  
+    # ACTUALIZAR PERMISOS (si se envían)
+    if datos.permiso_ver_productos is not None:
+        admin.permiso_ver_productos = datos.permiso_ver_productos
+    if datos.permiso_agregar_inventario is not None:
+        admin.permiso_agregar_inventario = datos.permiso_agregar_inventario
+    if datos.permiso_generar_facturas is not None:
+        admin.permiso_generar_facturas = datos.permiso_generar_facturas
+    if datos.permiso_agregar_personal_femenino is not None:
+        admin.permiso_agregar_personal_femenino = datos.permiso_agregar_personal_femenino
+  
     db.commit()
     db.refresh(admin)
-
     # === NOTIFICACIÓN EN TIEMPO REAL ===
     if bar_id:
         await notify_bar(
@@ -588,10 +605,17 @@ async def actualizar_administrador(admin_id: int, datos: AdministradorUpdate, db
                 "nombre": admin.nombre,
                 "foto": admin.foto,
                 "telefono": admin.telefono,
-                "correo": admin.correo
+                "correo": admin.correo,
+                # Incluir permisos actualizados
+                "permisos": {
+                    "ver_productos": admin.permiso_ver_productos,
+                    "agregar_inventario": admin.permiso_agregar_inventario,
+                    "generar_facturas": admin.permiso_generar_facturas,
+                    "agregar_personal_femenino": admin.permiso_agregar_personal_femenino
+                }
             }
         )
-    
+  
     return admin
 @router.post("/tareas_crear", response_model=TareaOut)
 async def crear_tarea(tarea: TareaCreate, db: Session = Depends(get_db)):  # ← async
@@ -1209,24 +1233,20 @@ def get_facturas_by_admin_and_bar(
 
     return facturas_con_info
 @router.post("/administradores", response_model=AdministradorOut)
-async def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)):  # ← async
+async def crear_administrador(admin: AdministradorCreate, db: Session = Depends(get_db)): # ← async
     if db.query(Dueno).filter(Dueno.nombre == admin.nombre).first():
         raise HTTPException(status_code=400, detail="Ese nombre ya pertenece a un dueño")
-
     if db.query(Administrador).filter(Administrador.correo == admin.correo).first():
         raise HTTPException(status_code=400, detail="Ya existe un administrador con ese correo electrónico.")
-    
+  
     if db.query(Administrador).filter(Administrador.documento == admin.documento).first():
         raise HTTPException(status_code=400, detail="Ya existe un administrador con ese documento.")
-    
+  
     max_id_dueno = db.query(func.max(Dueno.id)).scalar() or 0
     max_id_admin = db.query(func.max(Administrador.id)).scalar() or 0
     nuevo_id = max(max_id_dueno, max_id_admin) + 1
-
     hashed_password = pwd_context.hash(admin.contraseña)
-
     foto_url = subir_imagen_a_cloudinary(admin.foto, carpeta="administradores")
-
     nuevo_admin = Administrador(
         id=nuevo_id,
         nombre=admin.nombre,
@@ -1235,13 +1255,16 @@ async def crear_administrador(admin: AdministradorCreate, db: Session = Depends(
         foto=foto_url,
         telefono=admin.telefono,
         contraseña=hashed_password,
-        bar_id=admin.bar_id
+        bar_id=admin.bar_id,
+        # ASIGNAR PERMISOS (usa valores del request o defaults)
+        permiso_ver_productos=admin.permiso_ver_productos,
+        permiso_agregar_inventario=admin.permiso_agregar_inventario,
+        permiso_generar_facturas=admin.permiso_generar_facturas,
+        permiso_agregar_personal_femenino=admin.permiso_agregar_personal_femenino
     )
-
     db.add(nuevo_admin)
     db.commit()
     db.refresh(nuevo_admin)
-
     # === NOTIFICACIÓN EN TIEMPO REAL ===
     await notify_bar(
         bar_id=admin.bar_id,
@@ -1251,10 +1274,16 @@ async def crear_administrador(admin: AdministradorCreate, db: Session = Depends(
             "nombre": nuevo_admin.nombre,
             "foto": nuevo_admin.foto,
             "telefono": nuevo_admin.telefono,
-            "correo": nuevo_admin.correo
+            "correo": nuevo_admin.correo,
+            # Incluir permisos en la notificación si es necesario
+            "permisos": {
+                "ver_productos": nuevo_admin.permiso_ver_productos,
+                "agregar_inventario": nuevo_admin.permiso_agregar_inventario,
+                "generar_facturas": nuevo_admin.permiso_generar_facturas,
+                "agregar_personal_femenino": nuevo_admin.permiso_agregar_personal_femenino
+            }
         }
     )
-
     return nuevo_admin
 @router.get("/bar_tipo/{bar_id}", response_model=BarOut)
 async def obtener_bar(bar_id: int, db: Session = Depends(get_db)):
@@ -2246,11 +2275,6 @@ async def obtener_facturas_inventario(
     last_id: int | None = None, 
     db: Session = Depends(get_db)
 ):
-    """
-    Obtiene facturas con scroll infinito (paginación por cursor),
-    convirtiendo la hora de UTC a la hora local (America/Bogota, UTC-5)
-    para la visualización.
-    """
     
     ZONA_LOCAL = pytz.timezone('America/Bogota')
     
