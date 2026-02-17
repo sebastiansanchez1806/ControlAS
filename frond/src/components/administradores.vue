@@ -140,7 +140,7 @@
                 <div 
                   class="switch" 
                   :class="{ active: currentAdmin.permiso_ver_productos }" 
-                  @click="currentAdmin.permiso_ver_productos = !currentAdmin.permiso_ver_productos"
+                  @click="toggleVerProductos"
                 >
                   <div class="switch-knob"></div>
                 </div>
@@ -151,7 +151,7 @@
                 <div 
                   class="switch" 
                   :class="{ active: currentAdmin.permiso_agregar_inventario }" 
-                  @click="currentAdmin.permiso_agregar_inventario = !currentAdmin.permiso_agregar_inventario"
+                  @click="toggleAgregarInventario"
                 >
                   <div class="switch-knob"></div>
                 </div>
@@ -162,18 +162,19 @@
                 <div 
                   class="switch" 
                   :class="{ active: currentAdmin.permiso_generar_facturas }" 
-                  @click="currentAdmin.permiso_generar_facturas = !currentAdmin.permiso_generar_facturas"
+                  @click="toggleGenerarFacturas"
                 >
                   <div class="switch-knob"></div>
                 </div>
               </div>
 
-              <div class="permission-item">
+              <!-- Switch de Personal Femenino: SOLO aparece si el bar es tipo 'burdel' -->
+              <div v-if="esBurdel" class="permission-item">
                 <label>Agregar Personal Femenino</label>
                 <div 
                   class="switch" 
                   :class="{ active: currentAdmin.permiso_agregar_personal_femenino }" 
-                  @click="currentAdmin.permiso_agregar_personal_femenino = !currentAdmin.permiso_agregar_personal_femenino"
+                  @click="togglePersonalFemenino"
                 >
                   <div class="switch-knob"></div>
                 </div>
@@ -271,6 +272,10 @@ const currentYear = ref(new Date().getFullYear())
 const isTaskLoading = ref(false)
 const isAdminLoading = ref(false)
 
+// Para saber el tipo de bar y si es burdel
+const barTipo = ref(null)
+const esBurdel = computed(() => barTipo.value === 'burdel')
+
 const currentAdmin = ref({
   id: null,
   nombre: '',
@@ -280,7 +285,6 @@ const currentAdmin = ref({
   foto: '',
   contraseña: '',
   bar_id: activeBarStore.id,
-  // Inicializamos los permisos (por defecto false)
   permiso_ver_productos: false,
   permiso_agregar_inventario: false,
   permiso_generar_facturas: false,
@@ -296,6 +300,44 @@ const pendingTasks = computed(() => tasks.value.filter(task => task.estado === '
 const completedTasks = computed(() => tasks.value.filter(task => task.estado === 'completada'))
 const filteredTasks = computed(() => activeTaskTab.value === 'pending' ? pendingTasks.value : completedTasks.value)
 const isNewTaskFormValid = computed(() => newTask.value.descripcion.trim() !== '' && newTask.value.fecha.trim() !== '')
+
+// --- Notificaciones bonitas al cambiar permisos ---
+const showPermissionNotification = (permisoNombre, nuevoValor, adminNombre) => {
+  const isActivated = nuevoValor === true
+  const icon = isActivated ? 'success' : 'warning'
+  const title = isActivated ? '¡Activado!' : 'Desactivado'
+  const bgColor = isActivated ? '#10b981' : '#f59e0b' // verde / ámbar
+
+  Swal.fire({
+    title: title,
+    html: `Se ${isActivated ? 'activó' : 'desactivó'} la función de <strong>${permisoNombre}</strong> para <br><strong>${adminNombre}</strong>`,
+    icon: icon,
+    toast: true,
+    position: 'top-end',
+    showConfirmButton: false,
+    timer: 3000,                    // ← 3 segundos (más rápido)
+    timerProgressBar: true,
+    customClass: {
+      popup: 'permission-toast'
+    },
+    background: bgColor,
+    color: '#fff',
+    iconColor: '#fff',
+    didOpen: (toastEl) => {
+      // Desaparece inmediatamente al interactuar (mouse sobre toast, clic en página o scroll)
+      const hideToast = () => Swal.close()
+
+      // Mouse sobre la notificación
+      toastEl.addEventListener('mouseenter', hideToast)
+
+      // Clic en cualquier parte de la página
+      document.addEventListener('click', hideToast, { once: true })
+
+      // Scroll en la página
+      window.addEventListener('scroll', hideToast, { once: true })
+    }
+  })
+}
 
 // --- MÉTODOS API ---
 
@@ -325,6 +367,17 @@ const fetchTasks = async (adminId) => {
   }
 }
 
+const fetchBarInfo = async () => {
+  if (!activeBarStore.id) return
+  try {
+    const res = await axios.get(`${API_BASE_URL}/bar_tipo/${activeBarStore.id}`)
+    barTipo.value = res.data.tipo
+    console.log('Tipo de bar cargado:', barTipo.value)
+  } catch (err) {
+    console.error('Error obteniendo tipo de bar:', err)
+  }
+}
+
 const saveAdmin = async () => {
   const nombre = currentAdmin.value.nombre.trim()
   const correo = currentAdmin.value.correo ? currentAdmin.value.correo.trim() : ''
@@ -339,6 +392,11 @@ const saveAdmin = async () => {
     documento,
     telefono,
     contraseña: password
+  }
+
+  // Forzar permiso a false si el bar NO es burdel
+  if (!esBurdel.value) {
+    payload.permiso_agregar_personal_femenino = false
   }
 
   // VALIDACIONES
@@ -424,18 +482,15 @@ const togglePasswordVisibility = () => {
 const openAdminModal = (mode, admin = null) => {
   adminModalMode.value = mode
   if (admin) {
-    // Al editar, copiamos TODOS los campos + permisos
     currentAdmin.value = {
       ...admin,
-      contraseña: '', // siempre vacío al editar
-      // Aseguramos que los permisos existan (por si el backend los devuelve undefined)
+      contraseña: '',
       permiso_ver_productos: admin.permiso_ver_productos ?? false,
       permiso_agregar_inventario: admin.permiso_agregar_inventario ?? false,
       permiso_generar_facturas: admin.permiso_generar_facturas ?? false,
       permiso_agregar_personal_femenino: admin.permiso_agregar_personal_femenino ?? false
     }
   } else {
-    // Al agregar nuevo, valores por defecto
     currentAdmin.value = {
       id: null,
       nombre: '',
@@ -587,15 +642,89 @@ const formatDate = (dateString) => {
   })
 }
 
+// NUEVO: Funciones para manejar clics en switches con notificación inmediata
+const toggleVerProductos = () => {
+  const oldValue = currentAdmin.value.permiso_ver_productos
+  currentAdmin.value.permiso_ver_productos = !currentAdmin.value.permiso_ver_productos
+  
+  if (adminModalMode.value === 'edit') {
+    showPermissionNotification(
+      'ver productos en el menú principal',
+      currentAdmin.value.permiso_ver_productos,
+      currentAdmin.value.nombre || 'el administrador'
+    )
+  }
+}
+
+const toggleAgregarInventario = () => {
+  const oldValue = currentAdmin.value.permiso_agregar_inventario
+  currentAdmin.value.permiso_agregar_inventario = !currentAdmin.value.permiso_agregar_inventario
+  
+  if (adminModalMode.value === 'edit') {
+    showPermissionNotification(
+      'agregar o sumar al inventario',
+      currentAdmin.value.permiso_agregar_inventario,
+      currentAdmin.value.nombre || 'el administrador'
+    )
+  }
+}
+
+const toggleGenerarFacturas = () => {
+  const oldValue = currentAdmin.value.permiso_generar_facturas
+  currentAdmin.value.permiso_generar_facturas = !currentAdmin.value.permiso_generar_facturas
+  
+  if (adminModalMode.value === 'edit') {
+    showPermissionNotification(
+      'generar factura diaria',
+      currentAdmin.value.permiso_generar_facturas,
+      currentAdmin.value.nombre || 'el administrador'
+    )
+  }
+}
+
+const togglePersonalFemenino = () => {
+  const oldValue = currentAdmin.value.permiso_agregar_personal_femenino
+  currentAdmin.value.permiso_agregar_personal_femenino = !currentAdmin.value.permiso_agregar_personal_femenino
+  
+  if (adminModalMode.value === 'edit' && esBurdel.value) {
+    showPermissionNotification(
+      'agregar personal femenino',
+      currentAdmin.value.permiso_agregar_personal_femenino,
+      currentAdmin.value.nombre || 'el administrador'
+    )
+  }
+}
+
 onMounted(() => {
   if (activeBarStore.id) {
     fetchAdmins(activeBarStore.id)
+    fetchBarInfo()
   }
 })
 </script>
-
 <style scoped>
+.permission-toast {
+  font-family: 'Montserrat', sans-serif !important;
+  border-radius: 12px !important;
+  padding: 16px 24px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.4) !important;
+  backdrop-filter: blur(8px) !important;
+}
 
+.permission-toast .swal2-title {
+  font-size: 1.2rem !important;
+  margin: 0 0 8px 0 !important;
+  color: white !important;
+}
+
+.permission-toast .swal2-html-container {
+  font-size: 0.95rem !important;
+  color: rgba(255,255,255,0.95) !important;
+}
+
+.permission-toast .swal2-icon {
+  margin: 0 12px 0 0 !important;
+}
 /* Importa la fuente Lora para un estilo más formal */
 @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;700&display=swap');
 /* --- Estilos para el Spinner de Carga --- */
