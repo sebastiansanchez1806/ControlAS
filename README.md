@@ -35,4 +35,21 @@ ControlAS/
 └── frond/                # Interfaz de usuario en Vue 3 + Stores (Pinia)
 
 
+🔧 Flujo de Trabajo (CI/CD)
+El proyecto cuenta con un flujo de despliegue continuo optimizado:
 
+Desarrollo: Actualización de código en el repositorio central.
+
+Despliegue: Script automatizado en el servidor para ejecución de git pull y build del frontend.
+
+Distribución: Purga de caché en Cloudflare para asegurar la disponibilidad inmediata de los cambios.
+
+📊 Estado Actual
+Frontend: Interfaz moderna, animada y 100% responsive.
+
+Backend: Procesamiento estable de endpoints y envío de correos.
+
+Producción: Operando con certificados de seguridad activos y alto rendimiento.
+
+👤 Autor
+Diego Sánchez Desarrollador enfocado en soluciones tecnológicas para la gestión operativa.
