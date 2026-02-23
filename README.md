@@ -1,3 +1,9 @@
+
+⚠️ **IMPORTANTE – Licencia restrictiva**  
+Este repositorio es público SOLO para mostrar la arquitectura, tecnologías y calidad del código a potenciales clientes, colaboradores o inversionistas.  
+El uso, copia, modificación o implementación comercial **está prohibido** sin contrato escrito conmigo.  
+Ver LICENSE para detalles completos.
+
 # 🍸 ControlAS Bar - Sistema Integral de Gestión para Bares y Discotecas
 
 **Proyecto en producción real** — Actualmente optimiza la operación diaria de **6 establecimientos** en Bogotá, entregando control total sobre inventario, personal, ventas y finanzas.
